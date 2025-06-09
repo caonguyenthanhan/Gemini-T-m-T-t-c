@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Gemini Tóm Tắt & Đọc</title>
+  <meta charset="UTF-8">
+  <style>
+    /* CSS không thay đổi, bạn có thể giữ nguyên như cũ hoặc dùng lại mã này */
+    body { width: 380px; font-family: Arial, sans-serif; padding: 10px; font-size: 14px; }
+    h1 { font-size: 16px; text-align: center; margin-top: 0; }
+    input[type="password"] { width: 95%; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px; }
+    button { width: 100%; padding: 10px; margin-top: 5px; cursor: pointer; border: none; border-radius: 4px; color: white; font-weight: bold; }
+    button:hover { opacity: 0.9; }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
+    #summarizeBtn { background-color: #4285F4; }
+    #controls button { width: 49%; display: inline-block; } /* Chia đôi chiều rộng cho các nút điều khiển */
+    #playPauseBtn { background-color: #34A853; }
+    #stopBtn { background-color: #EA4335; }
+    #api-section { border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
+    #result-box { margin-top: 10px; padding: 10px; white-space: pre-wrap; word-wrap: break-word; max-height: 250px; overflow-y: auto; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 4px; font-size: 13px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>Gemini Tóm Tắt & Đọc</h1>
+
+  <div id="api-section">
+    <label for="apiKey">Gemini API Key:</label>
+    <input type="password" id="apiKey" placeholder="Dán API Key của bạn vào đây">
+    <button id="saveKeyBtn" style="background-color: #fbbc05;">Lưu Key</button>
+  </div>
+
+  <button id="summarizeBtn">Tóm tắt trang này</button>
+  
+  <div id="controls">
+      <button id="playPauseBtn">▶️ Đọc</button>
+      <button id="stopBtn">⏹️ Dừng</button>
+  </div>
+
+  <div id="result-box">Trạng thái: Sẵn sàng.</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
