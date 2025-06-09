@@ -8,7 +8,7 @@ Tiện ích mở rộng Chrome cho phép tóm tắt nội dung trang web bằng 
 - Tóm tắt nội dung bằng Google Gemini API.
 - Đọc văn bản tóm tắt bằng 2 công cụ:
   - **Giọng đọc của trình duyệt (mặc định)**: Sử dụng API `speechSynthesis` có sẵn.
-  - **Giọng đọc iFLYTEK**: Sử dụng API TTS của iFLYTEK cho chất lượng giọng đọc cao hơn.
+  - **Giọng đọc iFLYTEK**: Sử dụng API TTS của iFLYTEK cho chất lượng giọng đọc tiếng Việt cao hơn.
 - Lưu trữ an toàn các khóa API của người dùng.
 
 ## Cài đặt
@@ -39,6 +39,17 @@ Tiện ích mở rộng Chrome cho phép tóm tắt nội dung trang web bằng 
     -   `Giọng đọc của trình duyệt`: Nhanh, không cần cấu hình thêm.
     -   `Giọng đọc iFLYTEK`: Chất lượng cao hơn, yêu cầu cấu hình API.
 5.  Sử dụng các nút ▶️ **Đọc**, ⏸️ **Tạm dừng**, và ⏹️ **Dừng** để điều khiển việc đọc.
+
+## Kiểm tra kết nối iFLYTEK TTS
+
+Tiện ích bao gồm script `test-iflytek.js` để kiểm tra kết nối với iFLYTEK TTS API:
+
+1. Cập nhật thông tin API của bạn trong script:
+   ```javascript
+   const APP_ID = 'your_app_id';           // Thay bằng APPID của bạn
+   const API_KEY = 'your_api_key';         // Thay bằng APIKey của bạn
+   const API_SECRET = 'your_api_secret';   // Thay bằng APISecret của bạn
+   ```
 
 ## Yêu cầu
 

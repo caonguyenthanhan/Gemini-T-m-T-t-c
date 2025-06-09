@@ -4,9 +4,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 
 // --- CẤU HÌNH: Vui lòng điền thông tin của bạn vào đây ---
-const APP_ID = 'up69ibbf';           // Thay bằng APPID của bạn
-const API_KEY = 'f562b001693e0d9dd0657a5510f31420';         // Thay bằng APIKey của bạn
-const API_SECRET = 'bd0626fbf8883a63ba8e72ba635e3e9e';   // Thay bằng APISecret của bạn
+const APP_ID = 'your_app_id';           // Thay bằng APPID của bạn
+const API_KEY = 'your_api_key';         // Thay bằng APIKey của bạn
+const API_SECRET = 'your_api_secret';   // Thay bằng APISecret của bạn
 const TEXT_TO_SYNTHESIZE = 'Xin chào Việt Nam, tôi là trợ lý ảo của iFLYTEK.';
 const OUTPUT_FILE = 'output.mp3';
 // -------------------------------------------------------------
