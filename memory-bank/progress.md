@@ -9,6 +9,7 @@
 - Lưu trữ API key
 - Tạo script kiểm tra kết nối với iFLYTEK TTS API
 - Đưa dự án lên GitHub repository
+- Thêm nút truy cập nhanh trang lấy Gemini API key
 
 ## Đang tiến hành
 - Tích hợp iFLYTEK TTS API vào tiện ích chính
