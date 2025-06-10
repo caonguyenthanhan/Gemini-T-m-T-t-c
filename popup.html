@@ -6,18 +6,21 @@
   <style>
     body { width: 380px; font-family: Arial, sans-serif; padding: 10px; font-size: 14px; }
     h1 { font-size: 16px; text-align: center; margin-top: 0; }
-    input[type="password"], input[type="text"] { width: 95%; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px; }
-    button { width: 100%; padding: 10px; margin-top: 5px; cursor: pointer; border: none; border-radius: 4px; color: white; font-weight: bold; }
+    input[type="password"], input[type="text"] { width: 75%; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 10px; margin-top: 5px; cursor: pointer; border: none; border-radius: 4px; color: white; font-weight: bold; }
     button:hover { opacity: 0.9; }
     button:disabled { background-color: #ccc; cursor: not-allowed; }
     select { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
-    #summarizeBtn { background-color: #4285F4; }
+    #summarizeBtn { background-color: #4285F4; width: 100%; }
     #controls button { width: 49%; display: inline-block; }
     #playPauseBtn { background-color: #34A853; }
     #stopBtn { background-color: #EA4335; }
     .api-section { border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
     .api-section label { display: block; margin-bottom: 3px; font-weight: bold; }
     #result-box { margin-top: 10px; padding: 10px; white-space: pre-wrap; word-wrap: break-word; max-height: 200px; overflow-y: auto; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 4px; font-size: 13px; line-height: 1.5; }
+    .api-input-container { display: flex; align-items: center; }
+    .api-input-container input { margin-right: 5px; }
+    .get-key-btn { background-color: #0F9D58; padding: 8px; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -25,8 +28,11 @@
 
   <div class="api-section">
     <label for="apiKey">Gemini API Key:</label>
-    <input type="password" id="apiKey" placeholder="Dán Gemini API Key của bạn vào đây">
-    <button id="saveKeyBtn" style="background-color: #fbbc05;">Lưu Key</button>
+    <div class="api-input-container">
+      <input type="password" id="apiKey" placeholder="Dán Gemini API Key của bạn vào đây">
+      <button id="getKeyBtn" class="get-key-btn" title="Lấy Gemini API Key">🔑 Lấy Key</button>
+    </div>
+    <button id="saveKeyBtn" style="background-color: #fbbc05; width: 100%;">Lưu Key</button>
   </div>
 
   <div class="api-section">
@@ -34,7 +40,7 @@
       <input type="text" id="iflytekAppId" placeholder="iFLYTEK APPID">
       <input type="password" id="iflytekApiKey" placeholder="iFLYTEK APIKey">
       <input type="password" id="iflytekApiSecret" placeholder="iFLYTEK APISecret">
-      <button id="saveIflytekBtn" style="background-color: #fbbc05;">Lưu iFLYTEK Keys</button>
+      <button id="saveIflytekBtn" style="background-color: #fbbc05; width: 100%;">Lưu iFLYTEK Keys</button>
   </div>
 
   <button id="summarizeBtn">Tóm tắt trang này</button>

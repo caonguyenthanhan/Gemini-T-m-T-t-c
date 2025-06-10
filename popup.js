@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Gemini
     const apiKeyInput = document.getElementById('apiKey');
     const saveKeyBtn = document.getElementById('saveKeyBtn');
+    const getKeyBtn = document.getElementById('getKeyBtn');
 
     // iFLYTEK
     const iflytekAppIdInput = document.getElementById('iflytekAppId');
@@ -48,7 +49,12 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }
     });
-
+    
+    // Mở trang lấy Gemini API key
+    getKeyBtn.addEventListener('click', function() {
+        chrome.tabs.create({ url: 'https://aistudio.google.com/apikey' });
+    });
+    
     // Lưu iFLYTEK config
     saveIflytekBtn.addEventListener('click', function() {
         const config = {
