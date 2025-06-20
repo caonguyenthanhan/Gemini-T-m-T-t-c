@@ -1,29 +1,37 @@
-# Tiến độ dự án: Gemini Tóm Tắt & Đọc
+# Tiến độ dự án
 
 ## Đã hoàn thành
-- Thiết lập cấu trúc cơ bản của Chrome Extension
-- Tích hợp Readability.js để trích xuất nội dung
-- Kết nối với Google Gemini API
-- Xây dựng giao diện popup
-- Thêm chức năng đọc văn bản với Web Speech API
+
+- Trích xuất nội dung trang web sử dụng Readability.js
+- Kết nối với Google Gemini API để tóm tắt nội dung
+- Giao diện popup cơ bản
+- Đọc văn bản với Web Speech API
 - Lưu trữ API key
-- Tạo script kiểm tra kết nối với iFLYTEK TTS API
-- Đưa dự án lên GitHub repository
-- Thêm nút truy cập nhanh trang lấy Gemini API key
+- Tích hợp Google Cloud Text-to-Speech API
+- Hỗ trợ trích xuất nội dung từ YouTube và Google Doc
+- Thêm menu chuột phải (context menu) để tóm tắt trang hoặc văn bản đã chọn
+- Thêm tính năng mở kết quả tóm tắt trong cửa sổ mới khi sử dụng menu chuột phải
+- Tạo tệp kiểm tra Google Cloud TTS API (test-google-tts.html)
 
 ## Đang tiến hành
-- Tích hợp iFLYTEK TTS API vào tiện ích chính
+
+- Cải thiện xử lý lỗi kết nối API
 - Tạo tài liệu hướng dẫn sử dụng
+- Cập nhật README với hướng dẫn thiết lập dự án Google Cloud
 
 ## Cần làm
-- Hoàn thiện tích hợp iFLYTEK TTS
-- Thêm tùy chọn ngôn ngữ
-- Cải thiện xử lý lỗi
-- Thêm tùy chọn tùy chỉnh độ dài tóm tắt
-- Thêm chức năng lưu các bản tóm tắt
+
+- Thêm tùy chọn ngôn ngữ (Việt/Anh) cho kết quả tóm tắt
+- Cải thiện xử lý lỗi và thông báo người dùng
+- Thêm tùy chọn độ dài tóm tắt (ngắn/vừa/dài)
+- Thêm chức năng lưu bản tóm tắt
+- Cải thiện trích xuất nội dung từ YouTube và Google Doc
 
 ## Vấn đề đã biết
-- Một số trang web có cấu trúc phức tạp có thể không trích xuất được nội dung chính xác
-- Chất lượng giọng đọc tiếng Việt với Web Speech API phụ thuộc vào hỗ trợ của trình duyệt
-- Giới hạn của API Gemini có thể ảnh hưởng đến độ dài của nội dung có thể tóm tắt
-- Cần xử lý lỗi kết nối với iFLYTEK TTS API một cách cẩn thận
+
+- Trích xuất nội dung có thể không hoạt động tốt trên các trang web có cấu trúc phức tạp
+- Chất lượng giọng đọc tiếng Việt của Web Speech API còn hạn chế
+- Giới hạn của Gemini API về độ dài văn bản đầu vào
+- Trích xuất nội dung từ YouTube chỉ lấy được mô tả, không lấy được nội dung video
+- Trích xuất nội dung từ Google Doc phụ thuộc vào cấu trúc trang và quyền truy cập
+- Cần kích hoạt Google Cloud Text-to-Speech API trong dự án Google Cloud trước khi sử dụng

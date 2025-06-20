@@ -10,29 +10,26 @@ document.addEventListener('DOMContentLoaded', function () {
     const saveKeyBtn = document.getElementById('saveKeyBtn');
     const getKeyBtn = document.getElementById('getKeyBtn');
 
-    // iFLYTEK
-    const iflytekAppIdInput = document.getElementById('iflytekAppId');
-    const iflytekApiKeyInput = document.getElementById('iflytekApiKey');
-    const iflytekApiSecretInput = document.getElementById('iflytekApiSecret');
-    const saveIflytekBtn = document.getElementById('saveIflytekBtn');
+    // Google TTS
+    const googleTtsApiKeyInput = document.getElementById('googleTtsApiKey');
+    const saveGoogleTtsBtn = document.getElementById('saveGoogleTtsBtn');
     const ttsEngineSelect = document.getElementById('ttsEngine');
 
     let fullPageContent = '';
     let utterance = null;
     let audioContext = null;
     let audioSource = null;
+    let port = null;
 
     // --- CÁC HÀM TẢI VÀ LƯU KEY ---
 
     // Tải các key đã lưu khi mở popup
-    chrome.storage.sync.get(['geminiApiKey', 'iflytekConfig', 'ttsEngine'], function (result) {
+    chrome.storage.sync.get(['geminiApiKey', 'googleTtsConfig', 'ttsEngine'], function (result) {
         if (result.geminiApiKey) {
             apiKeyInput.value = result.geminiApiKey;
         }
-        if (result.iflytekConfig) {
-            iflytekAppIdInput.value = result.iflytekConfig.appId || '';
-            iflytekApiKeyInput.value = result.iflytekConfig.apiKey || '';
-            iflytekApiSecretInput.value = result.iflytekConfig.apiSecret || '';
+        if (result.googleTtsConfig) {
+            googleTtsApiKeyInput.value = result.googleTtsConfig.apiKey || '';
         }
         if (result.ttsEngine) {
             ttsEngineSelect.value = result.ttsEngine;
@@ -55,16 +52,14 @@ document.addEventListener('DOMContentLoaded', function () {
         chrome.tabs.create({ url: 'https://aistudio.google.com/apikey' });
     });
     
-    // Lưu iFLYTEK config
-    saveIflytekBtn.addEventListener('click', function() {
+    // Lưu Google TTS config
+    saveGoogleTtsBtn.addEventListener('click', function() {
         const config = {
-            appId: iflytekAppIdInput.value.trim(),
-            apiKey: iflytekApiKeyInput.value.trim(),
-            apiSecret: iflytekApiSecretInput.value.trim(),
+            apiKey: googleTtsApiKeyInput.value.trim()
         };
-        if (config.appId && config.apiKey && config.apiSecret) {
-            chrome.storage.sync.set({ iflytekConfig: config }, function() {
-                resultBox.textContent = 'Đã lưu iFLYTEK Keys thành công!';
+        if (config.apiKey) {
+            chrome.storage.sync.set({ googleTtsConfig: config }, function() {
+                resultBox.textContent = 'Đã lưu Google TTS Key thành công!';
                 setTimeout(() => { resultBox.textContent = 'Trạng thái: Sẵn sàng.'; }, 2000);
             });
         }
@@ -103,6 +98,51 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- SỰ KIỆN NHẤN NÚT ---
 
+    // Hàm để đảm bảo port kết nối luôn hoạt động
+    function ensureConnected() {
+        if (!port || port.error) {
+            try {
+                port = chrome.runtime.connect({name: "popup"});
+                
+                // Lắng nghe tin nhắn từ background script
+                port.onMessage.addListener((message) => {
+                    if (message.type === "SUMMARY_RESULT") {
+                        if (message.success) {
+                            resultBox.textContent = message.summary;
+                        } else {
+                            resultBox.textContent = `Lỗi tóm tắt: ${message.error}`;
+                        }
+                        summarizeBtn.textContent = 'Tóm tắt trang này';
+                        summarizeBtn.disabled = false;
+                    } else if (message.type === "TTS_RESULT") {
+                        if (message.success) {
+                            playAudioFromBase64(message.audioData);
+                        } else {
+                            resultBox.textContent = `Lỗi đọc: ${message.error}`;
+                            resetPlayButton();
+                        }
+                    }
+                });
+                
+                // Xử lý khi kết nối bị đóng
+                port.onDisconnect.addListener(() => {
+                    console.log("Port bị ngắt kết nối");
+                    port = null;
+                });
+            } catch (error) {
+                console.error("Lỗi khi kết nối port:", error);
+                port = null;
+            }
+        }
+        return port;
+    }
+    
+    // Tạo kết nối với background script khi popup mở
+    // Thay thế đoạn code này:
+    // port = chrome.runtime.connect({name: "popup"});
+    // Bằng:
+    ensureConnected();
+    
     // Sự kiện nhấn nút Tóm tắt
     summarizeBtn.addEventListener('click', function () {
         stopReading(); // Dừng đọc nếu đang đọc
@@ -117,7 +157,9 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             summarizeBtn.textContent = 'Đang xử lý...';
             summarizeBtn.disabled = true;
-            chrome.runtime.sendMessage({
+            
+            // Gửi tin nhắn qua kết nối
+            port.postMessage({
                 type: "SUMMARIZE_REQUEST",
                 apiKey: result.geminiApiKey,
                 content: fullPageContent
@@ -132,7 +174,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
         
-        stopBrowserReading(); // Dừng mọi thứ trước khi bắt đầu
+        stopReading(); // Dừng mọi thứ trước khi bắt đầu
 
         if (ttsEngineSelect.value === 'browser') {
             if (speechSynthesis.paused) {
@@ -144,19 +186,31 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 startBrowserReading(textToRead);
             }
-        } else { // iFLYTEK
-            chrome.storage.sync.get('iflytekConfig', function(result) {
-                if (!result.iflytekConfig || !result.iflytekConfig.appId) {
-                    resultBox.textContent = "Vui lòng nhập và lưu đủ thông tin iFLYTEK API.";
+        } else { // Google TTS
+            chrome.storage.sync.get('googleTtsConfig', function(result) {
+                if (!result.googleTtsConfig || !result.googleTtsConfig.apiKey) {
+                    resultBox.textContent = "Vui lòng nhập và lưu Google Cloud API Key.";
                     return;
                 }
                 playPauseBtn.disabled = true;
                 playPauseBtn.textContent = 'Đang tải...';
-                chrome.runtime.sendMessage({
-                    type: "TTS_REQUEST",
-                    config: result.iflytekConfig,
-                    text: textToRead
-                });
+                
+                // Đảm bảo port kết nối trước khi gửi tin nhắn
+                const activePort = ensureConnected();
+                if (activePort) {
+                    activePort.postMessage({
+                        type: "TTS_REQUEST",
+                        config: result.googleTtsConfig,
+                        text: textToRead
+                    });
+                } else {
+                    // Nếu không thể kết nối, sử dụng chrome.runtime.sendMessage thay thế
+                    chrome.runtime.sendMessage({
+                        type: "TTS_REQUEST",
+                        config: result.googleTtsConfig,
+                        text: textToRead
+                    });
+                }
             });
         }
     });
@@ -193,29 +247,39 @@ document.addEventListener('DOMContentLoaded', function () {
             if (audioSource) {
                 audioSource.stop();
             }
-            const audioData = atob(base64String);
-            const arrayBuffer = new ArrayBuffer(audioData.length);
-            const uint8Array = new Uint8Array(arrayBuffer);
-            for (let i = 0; i < audioData.length; i++) {
-                uint8Array[i] = audioData.charCodeAt(i);
+            if (audioContext) {
+                audioContext.close();
             }
-
+            
+            // Tạo AudioContext mới chỉ khi cần thiết
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            audioContext.decodeAudioData(arrayBuffer, (buffer) => {
-                audioSource = audioContext.createBufferSource();
-                audioSource.buffer = buffer;
-                audioSource.connect(audioContext.destination);
-                audioSource.start(0);
-                playPauseBtn.textContent = '⏹️ Dừng';
-                playPauseBtn.disabled = false;
-                audioSource.onended = () => {
-                   resetPlayButton();
-                };
-            }, (err) => {
-                console.error('Lỗi giải mã audio:', err);
-                resultBox.textContent = 'Lỗi giải mã audio.';
-                resetPlayButton();
-            });
+            
+            // Sử dụng Uint8Array trực tiếp từ base64
+            const binaryString = atob(base64String);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            
+            // Tối ưu vòng lặp
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            // Sử dụng Promise để xử lý decodeAudioData
+            audioContext.decodeAudioData(bytes.buffer)
+                .then(buffer => {
+                    audioSource = audioContext.createBufferSource();
+                    audioSource.buffer = buffer;
+                    audioSource.connect(audioContext.destination);
+                    audioSource.start(0);
+                    playPauseBtn.textContent = '⏹️ Dừng';
+                    playPauseBtn.disabled = false;
+                    audioSource.onended = resetPlayButton;
+                })
+                .catch(err => {
+                    console.error('Lỗi giải mã audio:', err);
+                    resultBox.textContent = 'Lỗi giải mã audio.';
+                    resetPlayButton();
+                });
         } catch (error) {
             console.error('Lỗi khi phát audio:', error);
             resultBox.textContent = 'Lỗi phát audio.';
@@ -223,7 +287,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function stopIflytekReading() {
+    function stopAudioPlayback() {
         if (audioSource) {
             audioSource.stop();
             audioSource = null;
@@ -236,7 +300,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function stopReading() {
         stopBrowserReading();
-        stopIflytekReading();
+        stopAudioPlayback();
         resetPlayButton();
     }
     
@@ -258,5 +322,18 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // Kiểm tra xem có kết quả tóm tắt từ context menu không
+    chrome.storage.local.get(['contextMenuSummary'], function(result) {
+        if (result.contextMenuSummary) {
+            // Hiển thị kết quả tóm tắt
+            resultBox.textContent = result.contextMenuSummary;
+            // Xóa kết quả từ storage
+            chrome.storage.local.remove(['contextMenuSummary']);
+        } else {
+            // Tiếp tục khởi tạo bình thường
+            init();
+        }
+    });
+    
     init();
 });

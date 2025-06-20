@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Kết quả tóm tắt</title>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.6; }
+    h1 { font-size: 24px; color: #4285F4; margin-bottom: 20px; }
+    #summary-content { padding: 15px; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 4px; white-space: pre-wrap; }
+    #controls { margin-top: 20px; }
+    button { padding: 10px 15px; margin-right: 10px; cursor: pointer; border: none; border-radius: 4px; color: white; font-weight: bold; }
+    button:hover { opacity: 0.9; }
+    #playPauseBtn { background-color: #34A853; }
+    #stopBtn { background-color: #EA4335; }
+    select { padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Kết quả tóm tắt</h1>
+  
+  <div id="summary-content">Đang tải kết quả tóm tắt...</div>
+  
+  <div id="controls">
+    <label for="ttsEngine">Chọn giọng đọc:</label>
+    <select id="ttsEngine">
+      <option value="browser">Giọng đọc của trình duyệt</option>
+      <option value="google">Giọng đọc Google Cloud</option>
+    </select>
+    <button id="playPauseBtn">▶️ Đọc</button>
+    <button id="stopBtn">⏹️ Dừng</button>
+  </div>
+
+  <script src="summary.js"></script>
+</body>
+</html>

@@ -24,8 +24,11 @@
   </style>
 </head>
 <body>
+  <!-- Thêm thông tin về hỗ trợ mới vào phần tiêu đề -->
   <h1>Gemini Tóm Tắt & Đọc</h1>
-
+  <p style="text-align: center; margin-top: -5px; font-size: 12px; color: #4285F4;">Hỗ trợ trang web, YouTube và Google Doc</p>
+  
+  <!-- Phần còn lại giữ nguyên -->
   <div class="api-section">
     <label for="apiKey">Gemini API Key:</label>
     <div class="api-input-container">
@@ -36,11 +39,9 @@
   </div>
 
   <div class="api-section">
-      <label>Cài đặt iFLYTEK TTS:</label>
-      <input type="text" id="iflytekAppId" placeholder="iFLYTEK APPID">
-      <input type="password" id="iflytekApiKey" placeholder="iFLYTEK APIKey">
-      <input type="password" id="iflytekApiSecret" placeholder="iFLYTEK APISecret">
-      <button id="saveIflytekBtn" style="background-color: #fbbc05; width: 100%;">Lưu iFLYTEK Keys</button>
+      <label>Cài đặt Google Cloud TTS:</label>
+      <input type="password" id="googleTtsApiKey" placeholder="Google Cloud API Key">
+      <button id="saveGoogleTtsBtn" style="background-color: #fbbc05; width: 100%;">Lưu Google TTS Key</button>
   </div>
 
   <button id="summarizeBtn">Tóm tắt trang này</button>
@@ -48,7 +49,7 @@
   <label for="ttsEngine">Chọn giọng đọc:</label>
   <select id="ttsEngine">
       <option value="browser">Giọng đọc của trình duyệt</option>
-      <option value="iflytek">Giọng đọc iFLYTEK</option>
+      <option value="google">Giọng đọc Google Cloud</option>
   </select>
   
   <div id="controls">
