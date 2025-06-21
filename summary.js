@@ -40,10 +40,8 @@ document.addEventListener('DOMContentLoaded', function () {
         return port;
     }
 
-    // Thay thế đoạn code này:
-    // port = chrome.runtime.connect({name: "summary"});
-    // Bằng:
-    ensureConnected();
+    // Khởi tạo kết nối port khi trang được tải
+    port = ensureConnected();
 
     // Tải lựa chọn công cụ TTS đã lưu
     chrome.storage.sync.get(['ttsEngine'], function (result) {
@@ -66,8 +64,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Lắng nghe tin nhắn từ background script
-    port.onMessage.addListener((message) => {
+    // Lắng nghe tin nhắn từ background script thông qua chrome.runtime.onMessage
+    chrome.runtime.onMessage.addListener((message) => {
         if (message.type === "TTS_RESULT") {
             if (message.success) {
                 playAudioFromBase64(message.audioData);

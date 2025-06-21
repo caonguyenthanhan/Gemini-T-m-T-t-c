@@ -1,97 +1,120 @@
 # Gemini Tóm Tắt & Đọc
 
-Tiện ích mở rộng Chrome cho phép tóm tắt nội dung trang web, YouTube và Google Doc bằng Google Gemini API và đọc văn bản bằng tiếng Việt với nhiều tùy chọn giọng đọc.
+Tiện ích mở rộng Chrome mạnh mẽ giúp tóm tắt thông minh nội dung từ trang web, YouTube và Google Doc sử dụng công nghệ AI của Google Gemini API. Hỗ trợ đọc văn bản bằng tiếng Việt với nhiều tùy chọn giọng đọc chất lượng cao, giúp người dùng tiết kiệm thời gian và tăng hiệu quả đọc thông tin.
 
-## Tính năng
+## Tính năng chính
 
-- Trích xuất nội dung có ý nghĩa từ trang web, YouTube và Google Doc bằng thư viện Readability.
-- Tóm tắt nội dung bằng Google Gemini API.
-- Đọc văn bản tóm tắt bằng 2 công cụ:
-  - **Giọng đọc của trình duyệt (mặc định)**: Sử dụng API `speechSynthesis` có sẵn.
-  - **Giọng đọc Google Cloud**: Sử dụng Google Cloud Text-to-Speech API cho chất lượng giọng đọc tiếng Việt cao hơn.
-- Lưu trữ an toàn các khóa API của người dùng.
-- Truy cập nhanh trang lấy Gemini API key.
-- Menu chuột phải để tóm tắt trang hoặc văn bản đã chọn.
+- **Trích xuất thông minh**: Tự động phân tích và trích xuất nội dung có ý nghĩa từ trang web, YouTube và Google Doc bằng thư viện Readability tiên tiến.
+- **Tóm tắt bằng AI**: Sử dụng sức mạnh của Google Gemini API để tạo bản tóm tắt ngắn gọn, chính xác và dễ hiểu.
+- **Đa dạng giọng đọc**:
+  - **Giọng đọc của trình duyệt (mặc định)**: Tích hợp sẵn với API `speechSynthesis`, không cần cấu hình thêm.
+  - **Giọng đọc Google Cloud**: Chất lượng cao, tự nhiên với nhiều tùy chọn giọng đọc tiếng Việt thông qua Google Cloud Text-to-Speech API.
+- **Bảo mật cao**: Lưu trữ an toàn các khóa API của người dùng với mã hóa cục bộ.
+- **Tiện lợi**: Truy cập nhanh trang lấy Gemini API key và tích hợp menu chuột phải để tóm tắt trang hoặc văn bản đã chọn.
 
-## Cài đặt
+## Cài đặt nhanh chóng
 
-1. Tải xuống hoặc clone repository này.
-2. Mở Chrome và truy cập `chrome://extensions/`.
-3. Bật **Developer mode** (Chế độ nhà phát triển) ở góc trên bên phải.
+1. Tải xuống hoặc clone repository này về máy tính của bạn.
+2. Mở trình duyệt Chrome và truy cập `chrome://extensions/`.
+3. Bật **Developer mode** (Chế độ nhà phát triển) ở góc trên bên phải màn hình.
 4. Nhấp vào **"Load unpacked"** (Tải tiện ích đã giải nén) và chọn thư mục chứa mã nguồn của extension.
+5. Tiện ích sẽ được cài đặt và hiển thị biểu tượng trên thanh công cụ của trình duyệt.
 
-## Sử dụng
+## Hướng dẫn sử dụng chi tiết
 
-### 1. Cấu hình API
+### 1. Cấu hình API (Thiết lập ban đầu)
 
-- **Gemini API (Bắt buộc để tóm tắt)**:
-  1. Mở tiện ích, nhấp vào nút **"🔑 Lấy Key"** để truy cập trang lấy Gemini API key.
-  2. Tạo và sao chép API key từ trang Google AI Studio.
-  3. Dán API key vào ô nhập trong tiện ích.
-  4. Nhấp **"Lưu Key"**.
+- **Gemini API (Bắt buộc để sử dụng tính năng tóm tắt)**:
+  1. Mở tiện ích bằng cách nhấp vào biểu tượng trên thanh công cụ.
+  2. Nhấp vào nút **"🔑 Lấy Key"** để truy cập trang lấy Gemini API key.
+  3. Tạo tài khoản hoặc đăng nhập vào Google AI Studio và tạo API key mới.
+  4. Sao chép API key và dán vào ô nhập trong tiện ích.
+  5. Nhấp **"Lưu Key"** để hoàn tất cấu hình.
 
-- **Google Cloud API (Tùy chọn để có giọng đọc nâng cao)**:
-  1. Tạo dự án Google Cloud và kích hoạt Text-to-Speech API (xem hướng dẫn bên dưới).
-  2. Tạo API key cho dự án của bạn.
+- **Google Cloud API (Tùy chọn - Để sử dụng giọng đọc chất lượng cao)**:
+  1. Tạo dự án Google Cloud và kích hoạt Text-to-Speech API (xem hướng dẫn chi tiết bên dưới).
+  2. Tạo API key cho dự án của bạn và thiết lập các hạn chế phù hợp.
   3. Mở tiện ích, dán API key vào ô "Google Cloud API Key".
-  4. Nhấp **"Lưu Google TTS Key"**.
+  4. Nhấp **"Lưu Google TTS Key"** để lưu cấu hình.
 
-### 2. Tóm tắt và Đọc
+### 2. Tóm tắt và Đọc nội dung
 
-1. Truy cập trang web, YouTube hoặc Google Doc bạn muốn tóm tắt.
-2. Nhấp vào biểu tượng của tiện ích trên thanh công cụ.
-3. Nhấn nút **"Tóm tắt trang này"**. Chờ trong giây lát để nhận bản tóm tắt.
-4. Chọn công cụ đọc từ menu thả xuống:
-   - `Giọng đọc của trình duyệt`: Nhanh, không cần cấu hình thêm.
-   - `Giọng đọc Google Cloud`: Chất lượng cao hơn, yêu cầu cấu hình API.
-5. Sử dụng các nút ▶️ **Đọc**, ⏸️ **Tạm dừng**, và ⏹️ **Dừng** để điều khiển việc đọc.
+1. Truy cập trang web, video YouTube hoặc tài liệu Google Doc bạn muốn tóm tắt.
+2. Nhấp vào biểu tượng của tiện ích trên thanh công cụ Chrome.
+3. Nhấn nút **"Tóm tắt trang này"** và chờ trong giây lát để AI phân tích và tạo bản tóm tắt.
+4. Sau khi nhận được bản tóm tắt, bạn có thể chọn công cụ đọc từ menu thả xuống:
+   - `Giọng đọc của trình duyệt`: Phương pháp nhanh chóng, không cần cấu hình thêm, sử dụng ngay.
+   - `Giọng đọc Google Cloud`: Chất lượng cao hơn với giọng đọc tự nhiên, yêu cầu cấu hình Google Cloud API.
+5. Điều khiển việc đọc bằng các nút:
+   - ▶️ **Đọc**: Bắt đầu đọc bản tóm tắt
+   - ⏸️ **Tạm dừng**: Tạm dừng việc đọc
+   - ⏹️ **Dừng**: Dừng hoàn toàn và đặt lại vị trí đọc
+   - 🔊 **Âm lượng**: Điều chỉnh âm lượng đọc
 
-### 3. Sử dụng menu chuột phải
+### 3. Sử dụng menu chuột phải (Truy cập nhanh)
 
-1. Nhấp chuột phải vào trang web để tóm tắt toàn bộ trang.
-2. Hoặc chọn văn bản, nhấp chuột phải và chọn "Tóm tắt văn bản đã chọn".
-3. Kết quả tóm tắt sẽ hiển thị trong cửa sổ mới.
+1. **Tóm tắt toàn bộ trang**: Nhấp chuột phải vào bất kỳ vị trí nào trên trang web và chọn "Tóm tắt trang này với Gemini".
+2. **Tóm tắt văn bản đã chọn**: Chọn đoạn văn bản cụ thể, nhấp chuột phải và chọn "Tóm tắt văn bản đã chọn với Gemini".
+3. **Xem kết quả**: Kết quả tóm tắt sẽ hiển thị trong cửa sổ mới, nơi bạn cũng có thể sử dụng các tính năng đọc văn bản.
 
-## Thiết lập dự án Google Cloud và kích hoạt Text-to-Speech API
+## Thiết lập dự án Google Cloud và kích hoạt Text-to-Speech API (Chi tiết)
 
 1. **Tạo dự án Google Cloud**:
    - Truy cập [Google Cloud Console](https://console.cloud.google.com/).
    - Nhấp vào menu thả xuống ở góc trên cùng bên trái và chọn "Dự án mới".
-   - Đặt tên cho dự án và nhấp "Tạo".
+   - Đặt tên cho dự án (ví dụ: "Gemini-TTS-Extension") và nhấp "Tạo".
+   - Chờ vài giây để hệ thống tạo dự án mới.
 
 2. **Kích hoạt Text-to-Speech API**:
    - Trong Google Cloud Console, mở menu bên trái và chọn "API & Dịch vụ" > "Thư viện".
-   - Tìm kiếm "Text-to-Speech" và chọn "Cloud Text-to-Speech API".
-   - Nhấp vào nút "Kích hoạt".
+   - Tìm kiếm "Text-to-Speech" trong ô tìm kiếm và chọn "Cloud Text-to-Speech API".
+   - Nhấp vào nút "Kích hoạt" và chờ hệ thống kích hoạt API.
+   - Lưu ý: Bạn có thể cần thiết lập thanh toán cho dự án, nhưng Google Cloud cung cấp gói miễn phí hàng tháng đủ cho hầu hết người dùng cá nhân.
 
 3. **Tạo API key**:
    - Trong Google Cloud Console, mở menu bên trái và chọn "API & Dịch vụ" > "Thông tin xác thực".
-   - Nhấp vào "Tạo thông tin xác thực" và chọn "Khóa API".
-   - Sao chép API key được tạo.
+   - Nhấp vào "Tạo thông tin xác thực" và chọn "Khóa API" từ menu thả xuống.
+   - Hệ thống sẽ tạo và hiển thị API key mới. Sao chép key này ngay lập tức.
 
-4. **Hạn chế API key (Khuyến nghị)**:
+4. **Hạn chế API key (Biện pháp bảo mật quan trọng)**:
    - Trong trang "Thông tin xác thực", nhấp vào API key vừa tạo.
    - Trong phần "Hạn chế API key", chọn "Hạn chế khóa".
-   - Chọn "Cloud Text-to-Speech API" từ danh sách.
-   - Lưu thay đổi.
+   - Chọn "Cloud Text-to-Speech API" từ danh sách API.
+   - Tùy chọn: Thêm hạn chế về nguồn HTTP để chỉ cho phép các yêu cầu từ tên miền cụ thể.
+   - Nhấp "Lưu" để áp dụng các hạn chế.
 
 ## Kiểm tra kết nối Google Cloud Text-to-Speech API
 
-Tiện ích bao gồm tệp `test-google-tts.html` để kiểm tra kết nối với Google Cloud Text-to-Speech API:
+Tiện ích bao gồm công cụ kiểm tra tích hợp để xác minh kết nối với Google Cloud Text-to-Speech API:
 
-1. Mở tệp `test-google-tts.html` trong trình duyệt.
-2. Nhập Google Cloud API Key của bạn.
-3. Nhập văn bản tiếng Việt để kiểm tra.
-4. Nhấp "Kiểm tra API" để xác nhận kết nối hoạt động.
+1. Mở tệp `test-google-tts.html` trong trình duyệt (có thể mở trực tiếp từ thư mục tiện ích).
+2. Nhập Google Cloud API Key của bạn vào ô được cung cấp.
+3. Nhập một đoạn văn bản tiếng Việt ngắn vào ô kiểm tra (ví dụ: "Xin chào, đây là bài kiểm tra giọng đọc tiếng Việt").
+4. Nhấp vào nút "Kiểm tra API" để gửi yêu cầu đến Google Cloud.
+5. Nếu cấu hình chính xác, bạn sẽ nghe được đoạn văn bản được đọc bằng giọng đọc tiếng Việt chất lượng cao.
+6. Nếu gặp lỗi, hãy kiểm tra lại API key và đảm bảo Text-to-Speech API đã được kích hoạt đúng cách.
 
-## Yêu cầu
+## Yêu cầu hệ thống
 
-- Trình duyệt Chrome phiên bản mới nhất.
-- Google Gemini API key (để tóm tắt).
-- Google Cloud API key với Text-to-Speech API đã kích hoạt (tùy chọn, để có giọng đọc chất lượng cao).
+- **Trình duyệt**: Chrome phiên bản 88 trở lên (khuyến nghị sử dụng phiên bản mới nhất).
+- **API Keys**:
+  - Google Gemini API key (bắt buộc để sử dụng tính năng tóm tắt).
+  - Google Cloud API key với Text-to-Speech API đã kích hoạt (tùy chọn, để sử dụng giọng đọc chất lượng cao).
+- **Kết nối Internet**: Cần có kết nối internet ổn định để giao tiếp với các API.
 
-## Lưu ý
+## Lưu ý quan trọng
 
-- Đảm bảo bạn đã kích hoạt Text-to-Speech API trong dự án Google Cloud trước khi sử dụng tính năng giọng đọc Google Cloud.
-- Trích xuất nội dung từ YouTube chỉ lấy được mô tả, không lấy được nội dung video.
-- Trích xuất nội dung từ Google Doc phụ thuộc vào cấu trúc trang và quyền truy cập.
+- **Cấu hình API**: Đảm bảo bạn đã kích hoạt Text-to-Speech API trong dự án Google Cloud trước khi sử dụng tính năng giọng đọc Google Cloud.
+- **Giới hạn trích xuất**: 
+  - Trích xuất nội dung từ YouTube chỉ lấy được mô tả và thông tin hiển thị, không lấy được nội dung âm thanh của video.
+  - Trích xuất nội dung từ Google Doc phụ thuộc vào cấu trúc trang và quyền truy cập của bạn.
+- **Bảo mật**: API keys được lưu trữ cục bộ trong trình duyệt của bạn và không được gửi đến bất kỳ máy chủ nào khác ngoài các API của Google.
+- **Giới hạn sử dụng**: Lưu ý rằng cả Gemini API và Google Cloud Text-to-Speech API đều có giới hạn sử dụng miễn phí. Kiểm tra trang web của Google để biết thông tin chi tiết về giới hạn hiện tại.
+
+## Đóng góp
+
+Đóng góp cho dự án này luôn được chào đón! Nếu bạn muốn cải thiện tiện ích, hãy tạo pull request hoặc báo cáo vấn đề trong phần Issues của repository.
+
+## Giấy phép
+
+Dự án này được phân phối dưới giấy phép MIT. Xem tệp `LICENSE` để biết thêm thông tin.

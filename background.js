@@ -38,8 +38,8 @@ try {
       // Lấy API key từ storage
       chrome.storage.sync.get(['geminiApiKey'], function(result) {
         if (result.geminiApiKey) {
-          // Gọi API để tóm tắt văn bản đã chọn
-          callGeminiApi(result.geminiApiKey, info.selectionText);
+          // Gọi API để tóm tắt văn bản đã chọn với tham số fromContextMenu=true
+          callGeminiApi(result.geminiApiKey, info.selectionText, true);
           
           // Thông báo cho người dùng
           chrome.action.setBadgeText({ text: "...", tabId: tab.id });
@@ -77,7 +77,7 @@ try {
   
   // --- HÀM GỌI API GEMINI ---
   // Cập nhật hàm callGeminiApi để xử lý nội dung từ YouTube và Google Doc
-  async function callGeminiApi(apiKey, textToSummarize, fromContextMenu = false) {
+  async function callGeminiApi(apiKey, textToSummarize, fromContextMenu = false, port = null) {
       const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
       
       // Kiểm tra nếu là nội dung YouTube
@@ -131,7 +131,11 @@ try {
               });
           } else {
               // Gửi kết quả về popup như bình thường
-              chrome.runtime.sendMessage({ type: "SUMMARY_RESULT", success: true, summary: summary.trim() });
+              if (port) {
+                  port.postMessage({ type: "SUMMARY_RESULT", success: true, summary: summary.trim() });
+              } else {
+                  chrome.runtime.sendMessage({ type: "SUMMARY_RESULT", success: true, summary: summary.trim() });
+              }
           }
   
       } catch (error) {
@@ -148,7 +152,11 @@ try {
                   });
               });
           } else {
-              chrome.runtime.sendMessage({ type: "SUMMARY_RESULT", success: false, error: error.message });
+              if (port) {
+                  port.postMessage({ type: "SUMMARY_RESULT", success: false, error: error.message });
+              } else {
+                  chrome.runtime.sendMessage({ type: "SUMMARY_RESULT", success: false, error: error.message });
+              }
           }
       }
   }
