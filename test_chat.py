@@ -19,10 +19,10 @@ import os
 # Ví dụ: Trên Linux/macOS: export GOOGLE_API_KEY="AIzaSy..."
 # Trên Windows (PowerShell): $env:GOOGLE_API_KEY="AIzaSy..."
 # Hoặc gán trực tiếp CHỈ KHI TEST CỤC BỘ và đảm bảo không chia sẻ code này.
-API_KEY = "AIzaSyDOB3DEB0w7cop8INMvNw3iLUh9486sCvU"
+API_KEY = ""
 
 # Nếu bạn muốn gán trực tiếp để thử nghiệm nhanh (KHÔNG KHUYẾN KHÍCH CHO SẢN PHẨM):
-# API_KEY = "AIzaSyDOB3DEB0w7cop8INMvNw3iLUh9486sCvUY" # Thay bằng API Key thật của bạn
+# API_KEY = "" # Thay bằng API Key thật của bạn
 
 if not API_KEY:
     print("Lỗi: Không tìm thấy khóa API. Vui lòng đặt biến môi trường 'GOOGLE_API_KEY' hoặc gán trực tiếp vào biến API_KEY trong code.")
