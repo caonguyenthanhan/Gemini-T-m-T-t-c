@@ -34,6 +34,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (result.ttsEngine) {
             ttsEngineSelect.value = result.ttsEngine;
         }
+        // Hiển thị/ẩn phần cài đặt Google TTS dựa trên giá trị đã lưu
+        toggleGoogleTtsSection();
     });
 
     // Lưu Gemini API key
@@ -65,10 +67,21 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
     
-    // Lưu lựa chọn công cụ TTS
+    // Lưu lựa chọn công cụ TTS và hiển thị/ẩn phần cài đặt Google TTS
     ttsEngineSelect.addEventListener('change', function() {
         chrome.storage.sync.set({ ttsEngine: this.value });
+        toggleGoogleTtsSection();
     });
+    
+    // Hàm hiển thị/ẩn phần cài đặt Google TTS
+    function toggleGoogleTtsSection() {
+        const googleTtsSection = document.getElementById('googleTtsSection');
+        if (ttsEngineSelect.value === 'google') {
+            googleTtsSection.style.display = 'block';
+        } else {
+            googleTtsSection.style.display = 'none';
+        }
+    }
 
 
     // --- XỬ LÝ TIN NHẮN TỪ BACKGROUND/CONTENT SCRIPT ---

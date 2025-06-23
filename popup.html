@@ -38,12 +38,6 @@
     <button id="saveKeyBtn" style="background-color: #fbbc05; width: 100%;">Lưu Key</button>
   </div>
 
-  <div class="api-section">
-      <label>Cài đặt Google Cloud TTS:</label>
-      <input type="password" id="googleTtsApiKey" placeholder="Google Cloud API Key">
-      <button id="saveGoogleTtsBtn" style="background-color: #fbbc05; width: 100%;">Lưu Google TTS Key</button>
-  </div>
-
   <button id="summarizeBtn">Tóm tắt trang này</button>
   
   <label for="ttsEngine">Chọn giọng đọc:</label>
@@ -51,6 +45,12 @@
       <option value="browser">Giọng đọc của trình duyệt</option>
       <option value="google">Giọng đọc Google Cloud</option>
   </select>
+  
+  <div id="googleTtsSection" class="api-section" style="display: none;">
+      <label>Cài đặt Google Cloud TTS:</label>
+      <input type="password" id="googleTtsApiKey" placeholder="Google Cloud API Key">
+      <button id="saveGoogleTtsBtn" style="background-color: #fbbc05; width: 100%;">Lưu Google TTS Key</button>
+  </div>
   
   <div id="controls">
       <button id="playPauseBtn">▶️ Đọc</button>
