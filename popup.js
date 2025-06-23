@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', function () {
     // Khai báo các đối tượng giao diện
     const summarizeBtn = document.getElementById('summarizeBtn');
+    const chatBtn = document.getElementById('chatBtn');
     const playPauseBtn = document.getElementById('playPauseBtn');
     const stopBtn = document.getElementById('stopBtn');
     const resultBox = document.getElementById('result-box');
@@ -20,6 +21,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let audioContext = null;
     let audioSource = null;
     let port = null;
+    let isPlaying = false;
 
     // --- CÁC HÀM TẢI VÀ LƯU KEY ---
 
@@ -176,6 +178,34 @@ document.addEventListener('DOMContentLoaded', function () {
                 type: "SUMMARIZE_REQUEST",
                 apiKey: result.geminiApiKey,
                 content: fullPageContent
+            });
+        });
+    });
+    
+    // Sự kiện nhấn nút Chat
+    chatBtn.addEventListener('click', function () {
+        chrome.storage.sync.get(['geminiApiKey'], function (result) {
+            if (!result.geminiApiKey) {
+                resultBox.textContent = 'Vui lòng nhập và lưu Gemini API Key.';
+                return;
+            }
+            if (!fullPageContent) {
+                resultBox.textContent = "Chưa lấy được nội dung trang. Vui lòng thử lại.";
+                return;
+            }
+            
+            // Lưu nội dung trang vào storage để chat.html có thể truy cập
+            chrome.storage.local.set({ 
+                fullPageContent: fullPageContent,
+                chatMode: 'fullPage'
+            }, function() {
+                // Mở trang chat.html trong cửa sổ mới
+                chrome.windows.create({
+                    url: chrome.runtime.getURL('chat.html'),
+                    type: 'popup',
+                    width: 800,
+                    height: 600
+                });
             });
         });
     });

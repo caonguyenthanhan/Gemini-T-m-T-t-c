@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat với Gemini</title>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.6; }
+    h1 { font-size: 24px; color: #4285F4; margin-bottom: 20px; }
+    #content-summary { padding: 15px; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 4px; white-space: pre-wrap; margin-bottom: 20px; max-height: 200px; overflow-y: auto; }
+    
+    /* Chat styles */
+    #chat-container { display: flex; flex-direction: column; height: 300px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #eee; border-radius: 4px; padding: 10px; }
+    .chat-message { padding: 10px; margin-bottom: 10px; border-radius: 4px; max-width: 80%; }
+    .user-message { background-color: #E8F0FE; align-self: flex-end; }
+    .ai-message { background-color: #F1F3F4; align-self: flex-start; }
+    #chat-input-container { display: flex; margin-top: 10px; }
+    #chat-input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; margin-right: 10px; }
+    #send-btn { background-color: #4285F4; padding: 10px 15px; cursor: pointer; border: none; border-radius: 4px; color: white; font-weight: bold; }
+    #send-btn:hover { opacity: 0.9; }
+    
+    /* TTS Controls */
+    #controls { margin-top: 10px; margin-bottom: 20px; }
+    button { padding: 10px 15px; margin-right: 10px; cursor: pointer; border: none; border-radius: 4px; color: white; font-weight: bold; }
+    button:hover { opacity: 0.9; }
+    #playPauseBtn { background-color: #34A853; }
+    #stopBtn { background-color: #EA4335; }
+    select { padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Chat với Gemini</h1>
+  
+  <h2>Tóm tắt nội dung</h2>
+  <div id="content-summary">Đang tải nội dung...</div>
+  
+  <div id="controls">
+    <label for="ttsEngine">Chọn giọng đọc:</label>
+    <select id="ttsEngine">
+      <option value="browser">Giọng đọc của trình duyệt</option>
+      <option value="google">Giọng đọc Google Cloud</option>
+    </select>
+    <button id="playPauseBtn">▶️ Đọc</button>
+    <button id="stopBtn">⏹️ Dừng</button>
+  </div>
+  
+  <h2>Hỏi đáp về nội dung</h2>
+  <div id="chat-container"></div>
+  
+  <div id="chat-input-container">
+    <input type="text" id="chat-input" placeholder="Nhập câu hỏi của bạn...">
+    <button id="send-btn">Gửi</button>
+  </div>
+
+  <script src="chat.js"></script>
+</body>
+</html>

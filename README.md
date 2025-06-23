@@ -9,6 +9,7 @@ Tiện ích mở rộng Chrome mạnh mẽ giúp tóm tắt thông minh nội du
 - **Đa dạng giọng đọc**:
   - **Giọng đọc của trình duyệt (mặc định)**: Tích hợp sẵn với API `speechSynthesis`, không cần cấu hình thêm.
   - **Giọng đọc Google Cloud**: Chất lượng cao, tự nhiên với nhiều tùy chọn giọng đọc tiếng Việt thông qua Google Cloud Text-to-Speech API.
+- **Đọc văn bản trong cửa sổ chat**: Nghe các phản hồi của AI trong cửa sổ chat bằng cách nhấp vào tin nhắn và sử dụng các nút điều khiển đọc.
 - **Bảo mật cao**: Lưu trữ an toàn các khóa API của người dùng với mã hóa cục bộ.
 - **Tiện lợi**: Truy cập nhanh trang lấy Gemini API key và tích hợp menu chuột phải để tóm tắt trang hoặc văn bản đã chọn.
 
@@ -51,7 +52,17 @@ Tiện ích mở rộng Chrome mạnh mẽ giúp tóm tắt thông minh nội du
    - ⏹️ **Dừng**: Dừng hoàn toàn và đặt lại vị trí đọc
    - 🔊 **Âm lượng**: Điều chỉnh âm lượng đọc
 
-### 3. Sử dụng menu chuột phải (Truy cập nhanh)
+### 3. Sử dụng tính năng đọc trong cửa sổ chat
+
+1. Sau khi nhận được bản tóm tắt, bạn có thể đặt câu hỏi hoặc yêu cầu thêm thông tin trong cửa sổ chat.
+2. Khi AI trả lời, bạn có thể nhấp vào tin nhắn của AI để chọn nó cho tính năng đọc.
+3. Sử dụng các nút điều khiển đọc ở phía trên cửa sổ chat:
+   - Chọn giọng đọc từ menu thả xuống (Giọng đọc của trình duyệt hoặc Google Cloud).
+   - Nhấn nút **Phát/Tạm dừng** để bắt đầu hoặc tạm dừng việc đọc tin nhắn.
+   - Nhấn nút **Dừng** để dừng hoàn toàn và đặt lại vị trí đọc.
+4. Bạn có thể nhấp vào bất kỳ tin nhắn nào của AI trong lịch sử chat để nghe nội dung đó.
+
+### 4. Sử dụng menu chuột phải (Truy cập nhanh)
 
 1. **Tóm tắt toàn bộ trang**: Nhấp chuột phải vào bất kỳ vị trí nào trên trang web và chọn "Tóm tắt trang này với Gemini".
 2. **Tóm tắt văn bản đã chọn**: Chọn đoạn văn bản cụ thể, nhấp chuột phải và chọn "Tóm tắt văn bản đã chọn với Gemini".

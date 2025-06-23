@@ -28,7 +28,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["summary.html", "summary.js"],
+      "resources": ["summary.html", "summary.js", "chat.html", "chat.js"],
       "matches": ["<all_urls>"]
     }
   ]

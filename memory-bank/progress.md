@@ -2,16 +2,17 @@
 
 ## Đã hoàn thành
 
-- Trích xuất nội dung trang web sử dụng Readability.js
-- Kết nối với Google Gemini API để tóm tắt nội dung
-- Giao diện popup cơ bản
-- Đọc văn bản với Web Speech API
-- Lưu trữ API key
-- Tích hợp Google Cloud Text-to-Speech API
-- Hỗ trợ trích xuất nội dung từ YouTube và Google Doc
-- Thêm menu chuột phải (context menu) để tóm tắt trang hoặc văn bản đã chọn
-- Thêm tính năng mở kết quả tóm tắt trong cửa sổ mới khi sử dụng menu chuột phải
-- Tạo tệp kiểm tra Google Cloud TTS API (test-google-tts.html)
+1. Trích xuất nội dung trang web bằng Readability.js
+2. Tích hợp Google Gemini API để tóm tắt nội dung
+3. Giao diện popup cơ bản
+4. Đọc văn bản bằng Web Speech API
+5. Lưu trữ API key
+6. Tích hợp Google Cloud Text-to-Speech API
+7. Trích xuất nội dung từ YouTube và Google Doc
+8. Menu chuột phải để tóm tắt trang hoặc văn bản đã chọn
+9. Cửa sổ mới để hiển thị kết quả tóm tắt
+10. Tệp kiểm tra Google Cloud TTS API (test-google-tts.html)
+11. Tích hợp chức năng đọc văn bản vào cửa sổ chat
 
 ## Đang tiến hành
 

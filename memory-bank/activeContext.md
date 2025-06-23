@@ -2,22 +2,25 @@
 
 ## Trạng thái hiện tại
 
-Tiện ích mở rộng "Gemini Tóm Tắt & Đọc" đã hoàn thiện các chức năng cốt lõi và đang trong giai đoạn phát triển các tính năng nâng cao. Hiện tại, tiện ích có thể:
+Tiện ích mở rộng Chrome "Gemini Tóm Tắt & Đọc" hiện đã có các tính năng cơ bản:
 
-- Trích xuất nội dung từ trang web thông thường, YouTube và Google Doc
-- Tóm tắt nội dung bằng Google Gemini API
-- Đọc văn bản tiếng Việt bằng Web Speech API hoặc Google Cloud Text-to-Speech API
-- Lưu trữ API key cho Gemini và Google Cloud
-- Cung cấp menu chuột phải để tóm tắt trang hoặc văn bản đã chọn
-- Hiển thị kết quả tóm tắt trong cửa sổ mới khi sử dụng menu chuột phải
+1. Trích xuất nội dung từ trang web thông thường
+2. Trích xuất nội dung từ YouTube và Google Doc
+3. Tóm tắt nội dung bằng Google Gemini API
+4. Đọc văn bản tóm tắt bằng Web Speech API (giọng đọc của trình duyệt)
+5. Đọc văn bản tóm tắt bằng Google Cloud Text-to-Speech API (giọng đọc chất lượng cao)
+6. Lưu trữ API key của người dùng
+7. Menu chuột phải để tóm tắt trang hoặc văn bản đã chọn
+8. Cửa sổ mới để hiển thị kết quả tóm tắt
+9. Đọc văn bản trong cửa sổ chat với cả hai tùy chọn giọng đọc
 
 ## Thay đổi gần đây
 
-1. Đã thêm hỗ trợ trích xuất nội dung từ YouTube và Google Doc
-2. Đã thay thế iFLYTEK TTS API bằng Google Cloud Text-to-Speech API để cải thiện chất lượng đọc tiếng Việt
+1. Đã thêm khả năng trích xuất nội dung từ YouTube và Google Doc
+2. Đã thay thế Google Cloud TTS API bằng phiên bản mới
 3. Đã thêm menu chuột phải để tóm tắt trang hoặc văn bản đã chọn
-4. Đã thêm tính năng mở kết quả tóm tắt trong cửa sổ mới khi sử dụng menu chuột phải
-5. Đã thêm tệp kiểm tra Google Cloud TTS API (test-google-tts.html)
+4. Đã thêm cửa sổ mới để hiển thị kết quả tóm tắt
+5. Đã tích hợp chức năng đọc văn bản vào cửa sổ chat, cho phép người dùng nghe các phản hồi của AI
 
 ## Các bước tiếp theo
 

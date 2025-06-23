@@ -38,17 +38,24 @@ try {
       // Lấy API key từ storage
       chrome.storage.sync.get(['geminiApiKey'], function(result) {
         if (result.geminiApiKey) {
-          // Gọi API để tóm tắt văn bản đã chọn với tham số fromContextMenu=true
-          callGeminiApi(result.geminiApiKey, info.selectionText, true);
-          
-          // Thông báo cho người dùng
-          chrome.action.setBadgeText({ text: "...", tabId: tab.id });
-          chrome.action.setBadgeBackgroundColor({ color: "#4285F4", tabId: tab.id });
-          
-          // Xóa badge sau 3 giây
-          setTimeout(() => {
-            chrome.action.setBadgeText({ text: "", tabId: tab.id });
-          }, 3000);
+          // Lưu văn bản đã chọn vào storage để sử dụng cho chức năng chat
+          chrome.storage.local.set({ 
+            selectedText: info.selectionText,
+            originalContent: info.selectionText,
+            chatMode: 'selection'
+          }, function() {
+            // Gọi API để tóm tắt văn bản đã chọn với tham số fromContextMenu=true
+            callGeminiApi(result.geminiApiKey, info.selectionText, true);
+            
+            // Thông báo cho người dùng
+            chrome.action.setBadgeText({ text: "...", tabId: tab.id });
+            chrome.action.setBadgeBackgroundColor({ color: "#4285F4", tabId: tab.id });
+            
+            // Xóa badge sau 3 giây
+            setTimeout(() => {
+              chrome.action.setBadgeText({ text: "", tabId: tab.id });
+            }, 3000);
+          });
         } else {
           // Thông báo nếu chưa có API key
           alert("Vui lòng nhập Gemini API Key trong popup của extension.");
