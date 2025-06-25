@@ -18,13 +18,17 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!port || port.error) {
             try {
                 port = chrome.runtime.connect({name: "summary"});
+                console.log("Đã kết nối port mới");
                 
                 // Lắng nghe tin nhắn từ background script
                 port.onMessage.addListener((message) => {
+                    console.log("Nhận tin nhắn từ background:", message);
                     if (message.type === "TTS_RESULT") {
                         if (message.success) {
+                            console.log("Nhận kết quả TTS thành công");
                             playAudioFromBase64(message.audioData);
                         } else {
+                            console.error("Lỗi TTS:", message.error);
                             summaryContent.textContent += "\n\nLỗi đọc: " + message.error;
                             resetPlayButton();
                         }
@@ -45,7 +49,11 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Khởi tạo kết nối port khi trang được tải
-    port = ensureConnected();
+    // Đảm bảo DOM đã tải xong trước khi kết nối
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log("DOM đã tải xong, kết nối port");
+        port = ensureConnected();
+    });
 
     // Tải lựa chọn công cụ TTS đã lưu
     chrome.storage.sync.get(['ttsEngine'], function (result) {
@@ -77,15 +85,82 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Lắng nghe tin nhắn từ background script thông qua chrome.runtime.onMessage
     chrome.runtime.onMessage.addListener((message) => {
+        console.log("Nhận tin nhắn từ background script:", message);
         if (message.type === "TTS_RESULT") {
+            console.log("Nhận kết quả TTS:", message.success ? "thành công" : "thất bại");
             if (message.success) {
                 playAudioFromBase64(message.audioData);
             } else {
+                console.error("Lỗi TTS từ background:", message.error);
                 summaryContent.textContent += "\n\nLỗi đọc: " + message.error;
                 resetPlayButton();
             }
         }
+        // Trả về true để giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
+        return true;
     });
+    
+    // Hàm gửi yêu cầu TTS đến background script
+    function requestTTS(text) {
+        console.log("Bắt đầu gửi yêu cầu TTS cho văn bản:", text.substring(0, 50) + "...");
+        
+        // Lấy API key từ storage
+        chrome.storage.local.get(['googleApiKey'], function(result) {
+            const apiKey = result.googleApiKey;
+            if (!apiKey) {
+                console.error("Lỗi: Chưa cấu hình Google API Key");
+                summaryContent.textContent += "\n\nLỗi: Chưa cấu hình Google API Key";
+                resetPlayButton();
+                return;
+            }
+            
+            console.log("Đã lấy được API key, chuẩn bị gửi yêu cầu TTS");
+            
+            // Cấu hình cho TTS
+            const config = {
+                apiKey: apiKey
+            };
+            
+            // Gửi yêu cầu TTS
+            const connected = ensureConnected();
+            if (connected) {
+                console.log("Sử dụng kết nối port để gửi yêu cầu TTS");
+                try {
+                    connected.postMessage({
+                        type: "TTS_REQUEST",
+                        config: config,
+                        text: text
+                    });
+                    console.log("Đã gửi yêu cầu TTS qua port");
+                } catch (error) {
+                    console.error("Lỗi khi gửi yêu cầu TTS qua port:", error);
+                    // Thử lại với sendMessage
+                    sendTTSWithMessage(config, text);
+                }
+            } else {
+                // Nếu không thể kết nối port, sử dụng sendMessage
+                console.log("Không thể kết nối port, sử dụng sendMessage");
+                sendTTSWithMessage(config, text);
+            }
+        });
+    }
+    
+    // Hàm gửi yêu cầu TTS bằng sendMessage
+    function sendTTSWithMessage(config, text) {
+        console.log("Gửi yêu cầu TTS bằng sendMessage");
+        try {
+            chrome.runtime.sendMessage({
+                type: "TTS_REQUEST",
+                config: config,
+                text: text
+            });
+            console.log("Đã gửi yêu cầu TTS bằng sendMessage");
+        } catch (error) {
+            console.error("Lỗi khi gửi yêu cầu TTS bằng sendMessage:", error);
+            summaryContent.textContent += "\n\nLỗi khi gửi yêu cầu TTS: " + error.message;
+            resetPlayButton();
+        }
+    }
     
     // Sự kiện nhấn nút Đọc/Tạm dừng
     playPauseBtn.addEventListener('click', function() {
@@ -107,30 +182,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 startBrowserReading(textToRead);
             }
         } else { // Google TTS
-            chrome.storage.sync.get('googleTtsConfig', function(result) {
-                if (!result.googleTtsConfig || !result.googleTtsConfig.apiKey) {
-                    summaryContent.textContent += "\n\nVui lòng nhập và lưu Google Cloud API Key trong popup của tiện ích.";
+            chrome.storage.local.get(['googleApiKey'], function(result) {
+                if (!result.googleApiKey) {
+                    console.error("Lỗi: Chưa cấu hình Google API Key");
+                    summaryContent.textContent += "\n\nLỗi: Chưa cấu hình Google API Key";
+                    resetPlayButton();
                     return;
                 }
+                
                 playPauseBtn.disabled = true;
                 playPauseBtn.textContent = 'Đang tải...';
                 
-                // Đảm bảo port kết nối trước khi gửi tin nhắn
-                const activePort = ensureConnected();
-                if (activePort) {
-                    activePort.postMessage({
-                        type: "TTS_REQUEST",
-                        config: result.googleTtsConfig,
-                        text: textToRead
-                    });
-                } else {
-                    // Nếu không thể kết nối, sử dụng chrome.runtime.sendMessage thay thế
-                    chrome.runtime.sendMessage({
-                        type: "TTS_REQUEST",
-                        config: result.googleTtsConfig,
-                        text: textToRead
-                    });
-                }
+                // Sử dụng hàm requestTTS để gửi yêu cầu
+                requestTTS(textToRead);
             });
         }
     });
@@ -163,10 +227,21 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     
     function playAudioFromBase64(base64String) {
+        console.log("Bắt đầu phát audio từ base64");
         try {
             if (audioSource) {
+                console.log("Dừng nguồn audio hiện tại");
                 audioSource.stop();
             }
+            
+            if (!base64String) {
+                console.error("Lỗi: Dữ liệu audio trống");
+                summaryContent.textContent += '\n\nLỗi: Dữ liệu audio trống.';
+                resetPlayButton();
+                return;
+            }
+            
+            console.log("Giải mã dữ liệu base64");
             const audioData = atob(base64String);
             const arrayBuffer = new ArrayBuffer(audioData.length);
             const uint8Array = new Uint8Array(arrayBuffer);
@@ -174,25 +249,31 @@ document.addEventListener('DOMContentLoaded', function () {
                 uint8Array[i] = audioData.charCodeAt(i);
             }
     
+            console.log("Tạo AudioContext mới");
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            console.log("Giải mã dữ liệu audio");
             audioContext.decodeAudioData(arrayBuffer, (buffer) => {
+                console.log("Giải mã thành công, bắt đầu phát audio");
                 audioSource = audioContext.createBufferSource();
                 audioSource.buffer = buffer;
                 audioSource.connect(audioContext.destination);
                 audioSource.start(0);
                 playPauseBtn.textContent = '⏹️ Dừng';
                 playPauseBtn.disabled = false;
+                
                 audioSource.onended = () => {
+                   console.log("Audio đã phát xong");
                    resetPlayButton();
                 };
             }, (err) => {
                 console.error('Lỗi giải mã audio:', err);
-                summaryContent.textContent += '\n\nLỗi giải mã audio.';
+                summaryContent.textContent += '\n\nLỗi giải mã audio: ' + (err.message || 'Không xác định');
                 resetPlayButton();
             });
         } catch (error) {
             console.error('Lỗi khi phát audio:', error);
-            summaryContent.textContent += '\n\nLỗi phát audio.';
+            summaryContent.textContent += '\n\nLỗi phát audio: ' + (error.message || 'Không xác định');
             resetPlayButton();
         }
     }

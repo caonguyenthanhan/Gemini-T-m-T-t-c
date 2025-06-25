@@ -75,7 +75,7 @@ try {
           return false;
       } else if (request.type === "TTS_REQUEST") {
           // Xử lý không đồng bộ và gửi phản hồi ngay lập tức
-          callGoogleTtsApi(request.config, request.text)
+          callGoogleTtsApi(request.config, request.text, null, request.readingIndex)
               .catch(error => console.error("Lỗi khi gọi Google TTS API:", error));
           // Không trả về true, không giữ kênh tin nhắn mở
           return false;
@@ -172,22 +172,38 @@ try {
   // Thêm bộ nhớ đệm cho kết quả TTS
   const ttsCache = new Map();
 
-  async function callGoogleTtsApi(config, text, port = null) {
+  async function callGoogleTtsApi(config, text, port = null, readingIndex = -1) {
+      console.log("Bắt đầu gọi Google TTS API", port ? "với port" : "không có port", "cho đoạn", readingIndex);
+      
+      // Kiểm tra text
+      if (!text || text.trim() === "") {
+          const errorMsg = "Văn bản trống, không thể chuyển đổi thành giọng nói";
+          console.error(errorMsg);
+          sendTTSResponse(port, false, null, errorMsg, readingIndex);
+          return;
+      }
+      
+      // Kiểm tra config
+      if (!config || !config.apiKey) {
+          const errorMsg = "Thiếu API key trong cấu hình";
+          console.error(errorMsg);
+          sendTTSResponse(port, false, null, errorMsg, readingIndex);
+          return;
+      }
+      
       // Kiểm tra cache
       const cacheKey = `${config.apiKey}_${text}`;
       if (ttsCache.has(cacheKey)) {
+          console.log("Tìm thấy kết quả trong cache, trả về ngay lập tức cho đoạn", readingIndex);
           const cachedAudio = ttsCache.get(cacheKey);
-          if (port) {
-              port.postMessage({ type: "TTS_RESULT", success: true, audioData: cachedAudio });
-          } else {
-              chrome.runtime.sendMessage({ type: "TTS_RESULT", success: true, audioData: cachedAudio });
-          }
+          sendTTSResponse(port, true, cachedAudio, null, readingIndex);
           return;
       }
       
       // Lấy API key từ config
       const { apiKey } = config;
       const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
+      console.log("Chuẩn bị gọi Google TTS API với URL:", url.substring(0, url.indexOf('?')));
 
       try {
           // Chuẩn bị dữ liệu cho request
@@ -196,17 +212,18 @@ try {
                   text: text
               },
               voice: {
-                  languageCode: "vi-VN",
-                  name: "vi-VN-Wavenet-A", // Giọng nữ Wavenet chất lượng cao
+                  languageCode: config.languageCode || "vi-VN",
+                  name: config.voice || "vi-VN-Wavenet-A", // Giọng nữ Wavenet chất lượng cao
                   ssmlGender: "FEMALE"
               },
               audioConfig: {
                   audioEncoding: "MP3",
-                  speakingRate: 1.0,
-                  pitch: 0.0
+                  speakingRate: config.speakingRate || 1.0,
+                  pitch: config.pitch || 0.0
               }
           };
 
+          console.log("Gửi request đến Google TTS API cho đoạn", readingIndex);
           // Gửi request đến Google Cloud TTS API
           const response = await fetch(url, {
               method: 'POST',
@@ -214,6 +231,7 @@ try {
               body: JSON.stringify(requestData)
           });
 
+          console.log("Nhận phản hồi từ Google TTS API, status:", response.status, "cho đoạn", readingIndex);
           // Xử lý response
           if (!response.ok) {
               const errorText = await response.text();
@@ -221,57 +239,115 @@ try {
           }
 
           const data = await response.json();
+          console.log("Đã nhận dữ liệu JSON từ Google TTS API cho đoạn", readingIndex);
+          
+          if (!data.audioContent) {
+              throw new Error("Không nhận được dữ liệu audio từ Google TTS API");
+          }
           
           // Lưu vào cache
+          console.log("Lưu kết quả vào cache cho đoạn", readingIndex);
           ttsCache.set(cacheKey, data.audioContent);
           // Giới hạn kích thước cache
-          if (ttsCache.size > 20) {
-              const firstKey = ttsCache.keys().next().value;
-              ttsCache.delete(firstKey);
+          if (ttsCache.size > 50) {
+              const oldestKey = ttsCache.keys().next().value;
+              ttsCache.delete(oldestKey);
+              console.log("Đã xóa mục cũ nhất khỏi cache");
           }
           
           // Gửi kết quả
-          if (port) {
-              port.postMessage({ type: "TTS_RESULT", success: true, audioData: data.audioContent });
-          } else {
-              chrome.runtime.sendMessage({ type: "TTS_RESULT", success: true, audioData: data.audioContent });
-          }
+          console.log("Gửi kết quả TTS thành công");
+          sendTTSResponse(port, true, data.audioContent, null, readingIndex);
       } catch (error) {
-          console.error("Lỗi khi gọi Google TTS API:", error);
-          if (port) {
-              port.postMessage({ type: "TTS_RESULT", success: false, error: error.message });
-          } else {
-              chrome.runtime.sendMessage({ type: "TTS_RESULT", success: false, error: error.message });
-          }
-      }
+            console.error("Lỗi khi gọi Google TTS API cho đoạn", readingIndex, ":", error);
+            
+            // Kiểm tra lỗi API bị vô hiệu hóa
+            if (error.message && error.message.includes("SERVICE_DISABLED") || 
+                (error.message && error.message.includes("403") && error.message.includes("disabled"))) {
+                // Lưu trạng thái API key vào localStorage
+                localStorage.setItem('googleApiKeyStatus', 'disabled');
+                
+                // Tạo thông báo chi tiết với hướng dẫn
+                const errorMsg = "Google TTS API chưa được kích hoạt. Vui lòng thực hiện các bước sau:\n" +
+                    "1. Truy cập Google Cloud Console: https://console.cloud.google.com/apis/library/texttospeech.googleapis.com\n" +
+                    "2. Đăng nhập với tài khoản Google của bạn\n" +
+                    "3. Chọn dự án của bạn\n" +
+                    "4. Nhấn nút 'Kích hoạt' để bật API Text-to-Speech\n" +
+                    "5. Đợi vài phút để thay đổi có hiệu lực\n" +
+                    "6. Thử lại tính năng đọc";
+                
+                sendTTSResponse(port, false, null, errorMsg, readingIndex);
+            } else {
+                sendTTSResponse(port, false, null, error.message, readingIndex);
+            }
+        }
   }
+  
+  // Hàm gửi phản hồi TTS
+function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex = -1) {
+    const response = { 
+        type: "TTS_RESULT", 
+        success: success,
+        readingIndex: readingIndex
+    };
+    
+    if (success) {
+        response.audioData = audioData;
+    } else {
+        response.error = errorMsg || "Lỗi không xác định";
+    }
+    
+    try {
+        if (port) {
+            console.log("Gửi kết quả TTS qua port cho đoạn", readingIndex);
+            port.postMessage(response);
+        } else {
+            console.log("Gửi kết quả TTS qua sendMessage cho đoạn", readingIndex);
+            chrome.runtime.sendMessage(response);
+        }
+    } catch (error) {
+        console.error("Lỗi khi gửi kết quả TTS:", error);
+    }
+}
 
   // Cập nhật xử lý kết nối từ popup và summary
   chrome.runtime.onConnect.addListener((port) => {
+      console.log("Nhận kết nối từ:", port.name);
       if (port.name === "popup" || port.name === "summary") {
           port.onMessage.addListener((request) => {
+              console.log("Nhận tin nhắn từ", port.name, ":", request.type);
               if (request.type === "SUMMARIZE_REQUEST") {
                   callGeminiApi(request.apiKey, request.content, false, port);
               } else if (request.type === "TTS_REQUEST") {
-                  callGoogleTtsApi(request.config, request.text, port);
+                  console.log("Xử lý yêu cầu TTS từ", port.name);
+                  callGoogleTtsApi(request.config, request.text, port, request.readingIndex);
               }
+          });
+          
+          // Xử lý khi port bị ngắt kết nối
+          port.onDisconnect.addListener(() => {
+              console.log("Port", port.name, "bị ngắt kết nối");
           });
       }
   });
 
   // Cập nhật listener cho tin nhắn
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      console.log("Nhận tin nhắn từ content script:", request.type);
       if (request.type === "SUMMARIZE_REQUEST") {
-          // Xử lý không đồng bộ và gửi phản hồi ngay lập tức
+          console.log("Xử lý yêu cầu tóm tắt");
+          // Xử lý không đồng bộ và gửi phản hồi sau
           callGeminiApi(request.apiKey, request.content)
               .catch(error => console.error("Lỗi khi gọi Gemini API:", error));
-          // Không trả về true, không giữ kênh tin nhắn mở
-          return false;
+          // Trả về true để giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
+          return true;
       } else if (request.type === "TTS_REQUEST") {
-          // Xử lý không đồng bộ và gửi phản hồi ngay lập tức
+          console.log("Xử lý yêu cầu TTS");
+          // Xử lý không đồng bộ và gửi phản hồi sau
           callGoogleTtsApi(request.config, request.text)
               .catch(error => console.error("Lỗi khi gọi Google TTS API:", error));
-          // Không trả về true, không giữ kênh tin nhắn mở
-          return false;
+          // Trả về true để giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
+          return true;
       }
+      return false; // Đối với các tin nhắn khác
   });

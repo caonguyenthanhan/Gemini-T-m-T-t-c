@@ -62,7 +62,7 @@ Tiện ích mở rộng Chrome mạnh mẽ giúp tóm tắt thông minh nội du
    - Nhấn nút **Dừng** để dừng hoàn toàn và đặt lại vị trí đọc.
 4. Bạn có thể nhấp vào bất kỳ tin nhắn nào của AI trong lịch sử chat để nghe nội dung đó.
 
-### 4. Sử dụng menu chuột phải (Truy cập nhanh)
+### 3. Sử dụng menu chuột phải (Truy cập nhanh)
 
 1. **Tóm tắt toàn bộ trang**: Nhấp chuột phải vào bất kỳ vị trí nào trên trang web và chọn "Tóm tắt trang này với Gemini".
 2. **Tóm tắt văn bản đã chọn**: Chọn đoạn văn bản cụ thể, nhấp chuột phải và chọn "Tóm tắt văn bản đã chọn với Gemini".
