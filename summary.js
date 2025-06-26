@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Tải kết quả tóm tắt và nội dung gốc từ storage
-    chrome.storage.local.get(['contextMenuSummary', 'selectedText', 'originalContent', 'chatMode'], function(result) {
+    chrome.storage.sync.get(['contextMenuSummary', 'selectedText', 'originalContent', 'chatMode'], function(result) {
         if (result.contextMenuSummary) {
             summaryContent.textContent = result.contextMenuSummary;
         } else {
@@ -105,8 +105,8 @@ document.addEventListener('DOMContentLoaded', function () {
         console.log("Bắt đầu gửi yêu cầu TTS cho văn bản:", text.substring(0, 50) + "...");
         
         // Lấy API key từ storage
-        chrome.storage.local.get(['googleApiKey'], function(result) {
-            const apiKey = result.googleApiKey;
+        chrome.storage.sync.get(['googleTtsConfig'], function(result) {
+            const apiKey = result.googleTtsConfig?.apiKey;
             if (!apiKey) {
                 console.error("Lỗi: Chưa cấu hình Google API Key");
                 summaryContent.textContent += "\n\nLỗi: Chưa cấu hình Google API Key";
@@ -182,8 +182,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 startBrowserReading(textToRead);
             }
         } else { // Google TTS
-            chrome.storage.local.get(['googleApiKey'], function(result) {
-                if (!result.googleApiKey) {
+            chrome.storage.sync.get(['googleTtsConfig'], function(result) {
+                if (!result.googleTtsConfig || !result.googleTtsConfig.apiKey) {
                     console.error("Lỗi: Chưa cấu hình Google API Key");
                     summaryContent.textContent += "\n\nLỗi: Chưa cấu hình Google API Key";
                     resetPlayButton();

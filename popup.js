@@ -366,12 +366,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Kiểm tra xem có kết quả tóm tắt từ context menu không
-    chrome.storage.local.get(['contextMenuSummary'], function(result) {
+    chrome.storage.sync.get(['contextMenuSummary'], function(result) {
         if (result.contextMenuSummary) {
             // Hiển thị kết quả tóm tắt
             resultBox.textContent = result.contextMenuSummary;
             // Xóa kết quả từ storage
-            chrome.storage.local.remove(['contextMenuSummary']);
+            chrome.storage.sync.remove(['contextMenuSummary']);
         } else {
             // Tiếp tục khởi tạo bình thường
             init();

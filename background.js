@@ -39,7 +39,7 @@ try {
       chrome.storage.sync.get(['geminiApiKey'], function(result) {
         if (result.geminiApiKey) {
           // Lưu văn bản đã chọn vào storage để sử dụng cho chức năng chat
-          chrome.storage.local.set({ 
+          chrome.storage.sync.set({ 
             selectedText: info.selectionText,
             originalContent: info.selectionText,
             chatMode: 'selection'
@@ -127,7 +127,7 @@ try {
           // Nếu được gọi từ context menu, lưu kết quả và mở cửa sổ mới
           if (fromContextMenu) {
               // Lưu kết quả tóm tắt vào storage
-              chrome.storage.local.set({ contextMenuSummary: summary.trim() }, function() {
+              chrome.storage.sync.set({ contextMenuSummary: summary.trim() }, function() {
                   // Mở trang summary.html trong cửa sổ mới
                   chrome.windows.create({
                       url: chrome.runtime.getURL('summary.html'),
@@ -149,7 +149,7 @@ try {
           console.error("Lỗi khi gọi Gemini API:", error);
           if (fromContextMenu) {
               // Lưu thông báo lỗi vào storage
-              chrome.storage.local.set({ contextMenuSummary: `Lỗi khi tóm tắt: ${error.message}` }, function() {
+              chrome.storage.sync.set({ contextMenuSummary: `Lỗi khi tóm tắt: ${error.message}` }, function() {
                   // Mở trang summary.html trong cửa sổ mới
                   chrome.windows.create({
                       url: chrome.runtime.getURL('summary.html'),
@@ -171,15 +171,19 @@ try {
   // --- HÀM GỌI API GOOGLE TTS ---
   // Thêm bộ nhớ đệm cho kết quả TTS
   const ttsCache = new Map();
+  // Bộ nhớ đệm riêng cho chat
+  const ttsChatCache = new Map();
 
-  async function callGoogleTtsApi(config, text, port = null, readingIndex = -1) {
-      console.log("Bắt đầu gọi Google TTS API", port ? "với port" : "không có port", "cho đoạn", readingIndex);
+  async function callGoogleTtsApi(config, text, port = null, readingIndex = -1, sendResponseCallback = null, isFromChat = false) {
+      // Xác định nguồn yêu cầu: từ chat hoặc từ port chat
+      isFromChat = isFromChat || (port && port.name === "chat");
+      console.log("Bắt đầu gọi Google TTS API", port ? "với port" : "không có port", "cho đoạn", readingIndex, isFromChat ? "(từ chat)" : "");
       
       // Kiểm tra text
       if (!text || text.trim() === "") {
           const errorMsg = "Văn bản trống, không thể chuyển đổi thành giọng nói";
           console.error(errorMsg);
-          sendTTSResponse(port, false, null, errorMsg, readingIndex);
+          sendTTSResponse(port, false, null, errorMsg, readingIndex, sendResponseCallback);
           return;
       }
       
@@ -187,16 +191,18 @@ try {
       if (!config || !config.apiKey) {
           const errorMsg = "Thiếu API key trong cấu hình";
           console.error(errorMsg);
-          sendTTSResponse(port, false, null, errorMsg, readingIndex);
+          sendTTSResponse(port, false, null, errorMsg, readingIndex, sendResponseCallback);
           return;
       }
       
-      // Kiểm tra cache
-      const cacheKey = `${config.apiKey}_${text}`;
-      if (ttsCache.has(cacheKey)) {
-          console.log("Tìm thấy kết quả trong cache, trả về ngay lập tức cho đoạn", readingIndex);
-          const cachedAudio = ttsCache.get(cacheKey);
-          sendTTSResponse(port, true, cachedAudio, null, readingIndex);
+      // Kiểm tra cache - sử dụng cache riêng cho chat
+       const cacheKey = `${config.apiKey}_${text}`;
+       const cache = isFromChat ? ttsChatCache : ttsCache;
+      
+      if (cache.has(cacheKey)) {
+          console.log("Tìm thấy kết quả trong cache", isFromChat ? "chat" : "chung", "trả về ngay lập tức cho đoạn", readingIndex);
+          const cachedAudio = cache.get(cacheKey);
+          sendTTSResponse(port, true, cachedAudio, null, readingIndex, sendResponseCallback);
           return;
       }
       
@@ -245,19 +251,23 @@ try {
               throw new Error("Không nhận được dữ liệu audio từ Google TTS API");
           }
           
-          // Lưu vào cache
-          console.log("Lưu kết quả vào cache cho đoạn", readingIndex);
-          ttsCache.set(cacheKey, data.audioContent);
+          // Sử dụng biến isFromChat đã được định nghĩa trước đó
+          // Không cần định nghĩa lại biến useChat
+          const cache = isFromChat ? ttsChatCache : ttsCache;
+          
+          console.log("Lưu kết quả vào cache", isFromChat ? "chat" : "chung", "cho đoạn", readingIndex);
+          cache.set(cacheKey, data.audioContent);
+          
           // Giới hạn kích thước cache
-          if (ttsCache.size > 50) {
-              const oldestKey = ttsCache.keys().next().value;
-              ttsCache.delete(oldestKey);
-              console.log("Đã xóa mục cũ nhất khỏi cache");
+          if (cache.size > 50) {
+              const oldestKey = cache.keys().next().value;
+              cache.delete(oldestKey);
+              console.log("Đã xóa mục cũ nhất khỏi cache", isFromChat ? "chat" : "chung");
           }
           
           // Gửi kết quả
           console.log("Gửi kết quả TTS thành công");
-          sendTTSResponse(port, true, data.audioContent, null, readingIndex);
+          sendTTSResponse(port, true, data.audioContent, null, readingIndex, sendResponseCallback);
       } catch (error) {
             console.error("Lỗi khi gọi Google TTS API cho đoạn", readingIndex, ":", error);
             
@@ -276,15 +286,15 @@ try {
                     "5. Đợi vài phút để thay đổi có hiệu lực\n" +
                     "6. Thử lại tính năng đọc";
                 
-                sendTTSResponse(port, false, null, errorMsg, readingIndex);
+                sendTTSResponse(port, false, null, errorMsg, readingIndex, sendResponseCallback);
             } else {
-                sendTTSResponse(port, false, null, error.message, readingIndex);
+                sendTTSResponse(port, false, null, error.message, readingIndex, sendResponseCallback);
             }
         }
   }
   
   // Hàm gửi phản hồi TTS
-function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex = -1) {
+function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex = -1, sendResponseCallback = null) {
     const response = { 
         type: "TTS_RESULT", 
         success: success,
@@ -301,6 +311,9 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
         if (port) {
             console.log("Gửi kết quả TTS qua port cho đoạn", readingIndex);
             port.postMessage(response);
+        } else if (sendResponseCallback) {
+            console.log("Gửi kết quả TTS qua sendResponse cho đoạn", readingIndex);
+            sendResponseCallback(response);
         } else {
             console.log("Gửi kết quả TTS qua sendMessage cho đoạn", readingIndex);
             chrome.runtime.sendMessage(response);
@@ -310,7 +323,7 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
     }
 }
 
-  // Cập nhật xử lý kết nối từ popup và summary
+  // Cập nhật xử lý kết nối từ popup, summary và chat
   chrome.runtime.onConnect.addListener((port) => {
       console.log("Nhận kết nối từ:", port.name);
       if (port.name === "popup" || port.name === "summary") {
@@ -320,15 +333,24 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
                   callGeminiApi(request.apiKey, request.content, false, port);
               } else if (request.type === "TTS_REQUEST") {
                   console.log("Xử lý yêu cầu TTS từ", port.name);
-                  callGoogleTtsApi(request.config, request.text, port, request.readingIndex);
+                  callGoogleTtsApi(request.config, request.text, port, request.readingIndex, null);
+              }
+          });
+      } else if (port.name === "chat") {
+          port.onMessage.addListener((request) => {
+              console.log("Nhận tin nhắn từ chat:", request.type);
+              if (request.type === "TTS_REQUEST") {
+                  console.log("Xử lý yêu cầu TTS từ chat cho đoạn", request.readingIndex);
+                  callGoogleTtsApi(request.config, request.text, port, request.readingIndex, null);
               }
           });
           
-          // Xử lý khi port bị ngắt kết nối
-          port.onDisconnect.addListener(() => {
-              console.log("Port", port.name, "bị ngắt kết nối");
-          });
       }
+       
+       // Xử lý khi port bị ngắt kết nối
+       port.onDisconnect.addListener(() => {
+           console.log("Port", port.name, "bị ngắt kết nối");
+       });
   });
 
   // Cập nhật listener cho tin nhắn
@@ -338,14 +360,44 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
           console.log("Xử lý yêu cầu tóm tắt");
           // Xử lý không đồng bộ và gửi phản hồi sau
           callGeminiApi(request.apiKey, request.content)
-              .catch(error => console.error("Lỗi khi gọi Gemini API:", error));
+              .then(result => {
+                  // Không cần làm gì vì kết quả đã được gửi qua sendMessage
+              })
+              .catch(error => {
+                  console.error("Lỗi khi gọi Gemini API:", error);
+                  // Gửi phản hồi lỗi nếu có sendResponse
+                  if (sendResponse) {
+                      sendResponse({
+                          type: "SUMMARY_RESULT",
+                          success: false,
+                          error: error.message
+                      });
+                  }
+              });
           // Trả về true để giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
           return true;
       } else if (request.type === "TTS_REQUEST") {
-          console.log("Xử lý yêu cầu TTS");
+          // Kiểm tra xem yêu cầu có đến từ chat hay không
+          const isFromChat = sender.tab && sender.tab.url && sender.tab.url.includes("chat.html");
+          console.log("Xử lý yêu cầu TTS cho đoạn", request.readingIndex, isFromChat ? "từ chat" : "từ popup/summary");
+          
           // Xử lý không đồng bộ và gửi phản hồi sau
-          callGoogleTtsApi(request.config, request.text)
-              .catch(error => console.error("Lỗi khi gọi Google TTS API:", error));
+          callGoogleTtsApi(request.config, request.text, null, request.readingIndex, sendResponse)
+              .then(result => {
+                  // Không cần làm gì vì kết quả đã được gửi qua sendTTSResponse
+              })
+              .catch(error => {
+                  console.error("Lỗi khi gọi Google TTS API:", error);
+                  // Gửi phản hồi lỗi nếu có sendResponse
+                  if (sendResponse) {
+                      sendResponse({
+                          type: "TTS_RESULT",
+                          success: false,
+                          error: error.message,
+                          readingIndex: request.readingIndex
+                      });
+                  }
+              });
           // Trả về true để giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
           return true;
       }
