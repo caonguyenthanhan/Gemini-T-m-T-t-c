@@ -13,6 +13,13 @@
 9. Cửa sổ mới để hiển thị kết quả tóm tắt
 10. Tệp kiểm tra Google Cloud TTS API (test-google-tts.html)
 11. Tích hợp chức năng đọc văn bản vào cửa sổ chat
+12. **[MỚI]** Chat chuyên sâu với tra cứu thông tin bổ sung tự động:
+    - Di chuyển tính năng từ popup chính vào cửa sổ chat chuyên sâu (chat.html)
+    - Tự động phát hiện khi AI trả lời "nội dung không đề cập" hoặc thiếu thông tin
+    - Tích hợp DuckDuckGo Search API và Wikipedia API
+    - Logic tự động tra cứu và tích hợp thông tin bổ sung vào prompt
+    - UI control trong chat để bật/tắt tính năng
+    - Cập nhật README.md với hướng dẫn sử dụng tính năng mới
 
 ## Đang tiến hành
 

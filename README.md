@@ -10,6 +10,10 @@ Tiện ích mở rộng Chrome mạnh mẽ giúp tóm tắt thông minh nội du
   - **Giọng đọc của trình duyệt (mặc định)**: Tích hợp sẵn với API `speechSynthesis`, không cần cấu hình thêm.
   - **Giọng đọc Google Cloud**: Chất lượng cao, tự nhiên với nhiều tùy chọn giọng đọc tiếng Việt thông qua Google Cloud Text-to-Speech API.
 - **Đọc văn bản trong cửa sổ chat**: Nghe các phản hồi của AI trong cửa sổ chat bằng cách nhấp vào tin nhắn và sử dụng các nút điều khiển đọc.
+- **Chat chuyên sâu với tra cứu thông tin bổ sung**: 
+  - Tự động phát hiện khi AI trả lời "nội dung không đề cập" hoặc thiếu thông tin.
+  - Tự động tra cứu thông tin bổ sung từ DuckDuckGo và Wikipedia.
+  - Tích hợp kết quả tìm kiếm vào prompt để AI đưa ra câu trả lời đầy đủ hơn.
 - **Bảo mật cao**: Lưu trữ an toàn các khóa API của người dùng với mã hóa cục bộ.
 - **Tiện lợi**: Truy cập nhanh trang lấy Gemini API key và tích hợp menu chuột phải để tóm tắt trang hoặc văn bản đã chọn.
 
@@ -62,7 +66,18 @@ Tiện ích mở rộng Chrome mạnh mẽ giúp tóm tắt thông minh nội du
    - Nhấn nút **Dừng** để dừng hoàn toàn và đặt lại vị trí đọc.
 4. Bạn có thể nhấp vào bất kỳ tin nhắn nào của AI trong lịch sử chat để nghe nội dung đó.
 
-### 3. Sử dụng menu chuột phải (Truy cập nhanh)
+### 4. Tính năng tra cứu thông tin bổ sung tự động
+
+1. **Kích hoạt tính năng**: Trong cửa sổ chat chuyên sâu, tích vào ô "Tự động tra cứu thông tin bổ sung" để bật tính năng.
+2. **Hoạt động tự động**: Khi AI trả lời với các cụm từ như "nội dung không đề cập", "không có thông tin", hệ thống sẽ:
+   - Tự động phát hiện câu trả lời thiếu thông tin
+   - Hiển thị thông báo "Đang tìm kiếm thông tin bổ sung..."
+   - Tra cứu thông tin từ DuckDuckGo và Wikipedia
+   - Tích hợp kết quả vào prompt và yêu cầu AI trả lời lại với thông tin đầy đủ hơn
+3. **Kiểm soát**: Bạn có thể bật/tắt tính năng này bất cứ lúc nào bằng cách tích/bỏ tích ô checkbox.
+4. **Lưu ý**: Tính năng này chỉ hoạt động trong cửa sổ chat chuyên sâu và không ảnh hưởng đến tính năng tóm tắt chính.
+
+### 5. Sử dụng menu chuột phải (Truy cập nhanh)
 
 1. **Tóm tắt toàn bộ trang**: Nhấp chuột phải vào bất kỳ vị trí nào trên trang web và chọn "Tóm tắt trang này với Gemini".
 2. **Tóm tắt văn bản đã chọn**: Chọn đoạn văn bản cụ thể, nhấp chuột phải và chọn "Tóm tắt văn bản đã chọn với Gemini".

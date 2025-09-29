@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const googleTtsApiKeyInput = document.getElementById('googleTtsApiKey');
     const saveGoogleTtsBtn = document.getElementById('saveGoogleTtsBtn');
     const ttsEngineSelect = document.getElementById('ttsEngine');
+    
+
 
     let fullPageContent = '';
     let utterance = null;
@@ -74,6 +76,8 @@ document.addEventListener('DOMContentLoaded', function () {
         chrome.storage.sync.set({ ttsEngine: this.value });
         toggleGoogleTtsSection();
     });
+    
+
     
     // Hàm hiển thị/ẩn phần cài đặt Google TTS
     function toggleGoogleTtsSection() {

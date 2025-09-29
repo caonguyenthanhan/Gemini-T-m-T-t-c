@@ -13,6 +13,8 @@ Plugin sử dụng kiến trúc Chrome Extension tiêu chuẩn với các thành
 4. Tích hợp với Google Cloud Text-to-Speech API cho chất lượng giọng đọc tiếng Việt cao hơn
 5. Lưu trữ API key trong chrome.storage.sync
 6. Phát hiện và xử lý đặc biệt cho YouTube và Google Doc
+7. **[MỚI]** Tích hợp DuckDuckGo Search API và Wikipedia API cho tra cứu thông tin bổ sung
+8. **[MỚI]** Logic phát hiện tự động khi AI trả lời thiếu thông tin trong chat chuyên sâu
 
 ## Mối quan hệ thành phần
 - popup.js: Xử lý giao diện người dùng và điều khiển luồng chính
@@ -29,3 +31,12 @@ Plugin sử dụng kiến trúc Chrome Extension tiêu chuẩn với các thành
 5. Khi sử dụng Google Cloud TTS, popup.js gửi yêu cầu đọc đến background.js
 6. background.js gọi Google Cloud TTS API và xử lý phản hồi âm thanh
 7. Khi sử dụng menu chuột phải, background.js lưu kết quả tóm tắt vào storage và mở cửa sổ summary.html
+8. **[MỚI]** Luồng tra cứu thông tin bổ sung tự động trong chat chuyên sâu:
+   - chat.js gọi Gemini API và nhận phản hồi từ AI
+   - chat.js sử dụng shouldAutoSearchWeb() để phát hiện phản hồi thiếu thông tin
+   - Nếu phát hiện thiếu thông tin, chat.js hiển thị thông báo "Đang tìm kiếm..."
+   - chat.js gửi yêu cầu WEB_SEARCH_REQUEST đến background.js với từ khóa từ câu hỏi
+   - background.js gọi DuckDuckGo API và Wikipedia API để tìm kiếm
+   - background.js trả về kết quả tìm kiếm cho chat.js
+   - chat.js tích hợp thông tin bổ sung vào prompt và gọi lại Gemini API
+   - chat.js hiển thị phản hồi được cải thiện với thông tin đầy đủ hơn

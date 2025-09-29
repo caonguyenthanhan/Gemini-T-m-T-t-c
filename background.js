@@ -79,6 +79,10 @@ try {
               .catch(error => console.error("Lỗi khi gọi Google TTS API:", error));
           // Không trả về true, không giữ kênh tin nhắn mở
           return false;
+      } else if (request.type === "WEB_SEARCH_REQUEST") {
+          // Xử lý yêu cầu tìm kiếm web
+          handleWebSearchRequest(request, sendResponse);
+          return true; // Giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
       }
   });
   
@@ -400,6 +404,132 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
               });
           // Trả về true để giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
           return true;
+      } else if (request.type === "WEB_SEARCH_REQUEST") {
+          // Xử lý yêu cầu tìm kiếm web
+          handleWebSearchRequest(request, sendResponse);
+          return true; // Giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
       }
       return false; // Đối với các tin nhắn khác
   });
+
+  // --- HÀM TÌM KIẾM WEB ---
+  async function handleWebSearchRequest(request, sendResponse) {
+      try {
+          const searchResults = await searchWeb(request.query, request.maxResults || 3);
+          sendResponse({
+              success: true,
+              results: searchResults
+          });
+      } catch (error) {
+          console.error("Lỗi khi tìm kiếm web:", error);
+          sendResponse({
+              success: false,
+              error: error.message
+          });
+      }
+  }
+
+  // Hàm tìm kiếm web sử dụng DuckDuckGo Instant Answer API
+  async function searchWeb(query, maxResults = 3) {
+      try {
+          // Sử dụng DuckDuckGo Instant Answer API (miễn phí, không cần API key)
+          const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+          
+          const response = await fetch(searchUrl);
+          if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          const results = [];
+          
+          // Lấy thông tin từ Abstract (thông tin tóm tắt chính)
+          if (data.Abstract && data.Abstract.trim()) {
+              results.push({
+                  title: data.Heading || "Thông tin chính",
+                  snippet: data.Abstract,
+                  url: data.AbstractURL || "",
+                  source: data.AbstractSource || "DuckDuckGo"
+              });
+          }
+          
+          // Lấy thông tin từ RelatedTopics (các chủ đề liên quan)
+          if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+              for (let i = 0; i < Math.min(data.RelatedTopics.length, maxResults - results.length); i++) {
+                  const topic = data.RelatedTopics[i];
+                  if (topic.Text && topic.Text.trim()) {
+                      results.push({
+                          title: topic.Text.split(' - ')[0] || "Thông tin liên quan",
+                          snippet: topic.Text,
+                          url: topic.FirstURL || "",
+                          source: "DuckDuckGo"
+                      });
+                  }
+              }
+          }
+          
+          // Nếu không có kết quả từ DuckDuckGo, thử tìm kiếm bằng cách khác
+          if (results.length === 0) {
+              // Fallback: sử dụng Wikipedia API
+              const wikiResults = await searchWikipedia(query, maxResults);
+              results.push(...wikiResults);
+          }
+          
+          return results.slice(0, maxResults);
+      } catch (error) {
+          console.error("Lỗi khi tìm kiếm DuckDuckGo:", error);
+          // Fallback: sử dụng Wikipedia API
+          try {
+              return await searchWikipedia(query, maxResults);
+          } catch (wikiError) {
+              console.error("Lỗi khi tìm kiếm Wikipedia:", wikiError);
+              throw new Error("Không thể tìm kiếm thông tin từ các nguồn bên ngoài");
+          }
+      }
+  }
+
+  // Hàm tìm kiếm Wikipedia (fallback)
+  async function searchWikipedia(query, maxResults = 3) {
+      try {
+          // Tìm kiếm tiếng Việt trước
+          let searchUrl = `https://vi.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
+          let response = await fetch(searchUrl);
+          
+          const results = [];
+          
+          if (response.ok) {
+              const data = await response.json();
+              if (data.extract && data.extract.trim()) {
+                  results.push({
+                      title: data.title || "Wikipedia",
+                      snippet: data.extract,
+                      url: data.content_urls?.desktop?.page || "",
+                      source: "Wikipedia (Tiếng Việt)"
+                  });
+              }
+          }
+          
+          // Nếu không tìm thấy tiếng Việt, thử tiếng Anh
+          if (results.length === 0) {
+              searchUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
+              response = await fetch(searchUrl);
+              
+              if (response.ok) {
+                  const data = await response.json();
+                  if (data.extract && data.extract.trim()) {
+                      results.push({
+                          title: data.title || "Wikipedia",
+                          snippet: data.extract,
+                          url: data.content_urls?.desktop?.page || "",
+                          source: "Wikipedia (English)"
+                      });
+                  }
+              }
+          }
+          
+          return results.slice(0, maxResults);
+      } catch (error) {
+          console.error("Lỗi khi tìm kiếm Wikipedia:", error);
+          return [];
+      }
+  }

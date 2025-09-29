@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const playPauseBtn = document.getElementById('playPauseBtn');
     const stopBtn = document.getElementById('stopBtn');
     const ttsEngineSelect = document.getElementById('ttsEngine');
+    const enableWebSearchCheckbox = document.getElementById('enableWebSearch');
     
     let pageContent = "";
     let chatMode = "";
@@ -136,16 +137,25 @@ document.addEventListener('DOMContentLoaded', function () {
     // Khởi tạo kết nối port khi trang được tải
     port = ensureConnected();
 
-    // Tải lựa chọn công cụ TTS đã lưu
-    chrome.storage.sync.get(['ttsEngine'], function (result) {
+    // Tải lựa chọn công cụ TTS và cài đặt web search đã lưu
+    chrome.storage.sync.get(['ttsEngine', 'enableWebSearch'], function (result) {
         if (result.ttsEngine) {
             ttsEngineSelect.value = result.ttsEngine;
         }
+        // Mặc định bật tính năng web search nếu chưa có cài đặt
+        enableWebSearchCheckbox.checked = result.enableWebSearch !== false;
     });
 
     // Lưu lựa chọn công cụ TTS
     ttsEngineSelect.addEventListener('change', function() {
         chrome.storage.sync.set({ ttsEngine: this.value });
+    });
+    
+    // Lưu cài đặt bật/tắt tính năng tra cứu thông tin bổ sung
+    enableWebSearchCheckbox.addEventListener('change', function() {
+        chrome.storage.sync.set({ enableWebSearch: this.checked }, function() {
+            console.log('Đã lưu cài đặt tra cứu thông tin bổ sung:', enableWebSearchCheckbox.checked);
+        });
     });
     
     // Lắng nghe tin nhắn từ background script thông qua chrome.runtime.onMessage
@@ -1140,13 +1150,44 @@ document.addEventListener('DOMContentLoaded', function () {
             
             // Gọi API để trả lời câu hỏi
             callGeminiChatApi(result.geminiApiKey, userMessage, pageContent, chatHistory)
-                .then(response => {
+                .then(async response => {
                     // Xóa thông báo đang xử lý
                     loadingMsgElement.remove();
-                    // Hiển thị câu trả lời
-                    addChatMessage(response, 'ai');
-                    // Thêm vào lịch sử chat
-                    chatHistory.push({role: 'assistant', content: response});
+                    
+                    // Kiểm tra xem có cần tự động tìm kiếm thông tin bổ sung không
+                    const needsAutoSearch = await shouldAutoSearchWeb(response, userMessage);
+                    
+                    if (needsAutoSearch) {
+                        console.log("Phát hiện cần tự động tìm kiếm thông tin bổ sung");
+                        
+                        // Hiển thị câu trả lời ban đầu
+                        addChatMessage(response, 'ai');
+                        chatHistory.push({role: 'assistant', content: response});
+                        
+                        // Hiển thị thông báo đang tìm kiếm
+                        const searchingMsgElement = addChatMessage("🔍 Đang tìm kiếm thông tin bổ sung...", 'ai');
+                        
+                        try {
+                            // Gọi lại API với tìm kiếm bổ sung
+                            const enhancedResponse = await callGeminiChatApi(result.geminiApiKey, userMessage, pageContent, chatHistory, true);
+                            
+                            // Xóa thông báo đang tìm kiếm
+                            searchingMsgElement.remove();
+                            
+                            // Hiển thị câu trả lời được cải thiện
+                            addChatMessage("📚 Thông tin bổ sung:\n\n" + enhancedResponse, 'ai');
+                            chatHistory.push({role: 'assistant', content: enhancedResponse});
+                        } catch (searchError) {
+                            // Xóa thông báo đang tìm kiếm
+                            searchingMsgElement.remove();
+                            console.error("Lỗi khi tìm kiếm thông tin bổ sung:", searchError);
+                            addChatMessage("⚠️ Không thể tìm kiếm thông tin bổ sung: " + searchError.message, 'ai');
+                        }
+                    } else {
+                        // Hiển thị câu trả lời bình thường
+                        addChatMessage(response, 'ai');
+                        chatHistory.push({role: 'assistant', content: response});
+                    }
                 })
                 .catch(error => {
                     // Xóa thông báo đang xử lý
@@ -1274,12 +1315,36 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
     
-    // Hàm gọi Gemini API để chat
-    async function callGeminiChatApi(apiKey, userQuestion, contextText, chatHistory) {
-        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+    // Hàm gọi Gemini API để chat với khả năng tự động tra cứu
+    async function callGeminiChatApi(apiKey, userQuestion, contextText, chatHistory, isRetryWithSearch = false) {
+        //const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         
-        // Tạo prompt với context và câu hỏi
-        const contextPrompt = `Bạn là trợ lý AI giúp người dùng hiểu sâu hơn về nội dung họ đang đọc. Dưới đây là nội dung trang web mà người dùng đang tìm hiểu:\n\n"""${contextText}"""\n\nHãy trả lời câu hỏi của người dùng dựa trên nội dung trang web. Trả lời bằng tiếng Việt, ngắn gọn, dễ hiểu và chính xác. Nếu câu hỏi không liên quan đến nội dung, hãy lịch sự đề nghị người dùng đặt câu hỏi liên quan đến nội dung trang web.`;
+        let additionalInfo = "";
+        
+        // Nếu đây là lần thử lại với tìm kiếm hoặc người dùng yêu cầu tìm kiếm
+        if (isRetryWithSearch) {
+            console.log("Thực hiện tìm kiếm thông tin bổ sung cho câu hỏi:", userQuestion);
+            try {
+                const searchResults = await searchWebForQuestion(userQuestion);
+                if (searchResults && searchResults.length > 0) {
+                    additionalInfo = formatSearchResults(searchResults);
+                    console.log("Đã tìm thấy thông tin bổ sung:", additionalInfo.substring(0, 200) + "...");
+                }
+            } catch (error) {
+                console.error("Lỗi khi tìm kiếm thông tin bổ sung:", error);
+                // Tiếp tục mà không có thông tin bổ sung
+            }
+        }
+        
+        // Tạo prompt với context, thông tin bổ sung và câu hỏi
+        let contextPrompt = `Bạn là trợ lý AI giúp người dùng hiểu sâu hơn về nội dung họ đang đọc. Dưới đây là nội dung trang web mà người dùng đang tìm hiểu:\n\n"""${contextText}"""`;
+        
+        if (additionalInfo) {
+            contextPrompt += `\n\nThông tin bổ sung từ các nguồn khác:\n\n${additionalInfo}`;
+        }
+        
+        contextPrompt += `\n\nHãy trả lời câu hỏi của người dùng dựa trên nội dung trang web${additionalInfo ? ' và thông tin bổ sung' : ''}. Trả lời bằng tiếng Việt, ngắn gọn, dễ hiểu và chính xác. ${additionalInfo ? 'Nếu thông tin bổ sung hữu ích, hãy tích hợp nó một cách tự nhiên vào câu trả lời. ' : ''}Nếu câu hỏi không liên quan đến nội dung, hãy lịch sự đề nghị người dùng đặt câu hỏi liên quan đến nội dung trang web.`;
         
         // Chuẩn bị nội dung cho API
         const contents = [
@@ -1320,5 +1385,152 @@ document.addEventListener('DOMContentLoaded', function () {
             console.error("Lỗi khi gọi Gemini API:", error);
             throw error;
         }
+    }
+    
+    // Hàm kiểm tra xem có cần tự động tìm kiếm thông tin bổ sung không (dựa trên phản hồi AI)
+    async function shouldAutoSearchWeb(aiResponse, userQuestion) {
+        // Kiểm tra cài đặt người dùng
+        const settings = await new Promise(resolve => {
+            chrome.storage.sync.get(['enableWebSearch'], result => {
+                resolve(result);
+            });
+        });
+        
+        // Nếu người dùng tắt tính năng, không tìm kiếm
+        if (settings.enableWebSearch === false) {
+            return false;
+        }
+        
+        const responseLower = aiResponse.toLowerCase();
+        
+        // Các cụm từ cho thấy AI không thể trả lời dựa trên nội dung hiện tại
+        const noInfoPhrases = [
+            'nội dung không đề cập',
+            'không có thông tin',
+            'không được đề cập',
+            'không tìm thấy thông tin',
+            'trang web không cung cấp',
+            'không có dữ liệu',
+            'không có chi tiết',
+            'không được nêu',
+            'không được mô tả',
+            'không có thông tin cụ thể',
+            'tôi không thể tìm thấy',
+            'không có trong nội dung',
+            'không được trình bày',
+            'không có sẵn',
+            'cần thêm thông tin',
+            'cần tìm hiểu thêm'
+        ];
+        
+        // Kiểm tra xem AI có đề cập đến việc thiếu thông tin không
+        const hasNoInfoPhrase = noInfoPhrases.some(phrase => responseLower.includes(phrase));
+        
+        // Kiểm tra xem câu trả lời có quá ngắn (có thể là do thiếu thông tin)
+        const isShortResponse = aiResponse.trim().split(' ').length < 20;
+        
+        // Kiểm tra xem AI có gợi ý tìm kiếm thêm không
+        const suggestsMoreInfo = responseLower.includes('tìm kiếm thêm') || 
+                                responseLower.includes('tra cứu thêm') ||
+                                responseLower.includes('cần thêm thông tin');
+        
+        return hasNoInfoPhrase || (isShortResponse && suggestsMoreInfo);
+    }
+    
+    // Hàm kiểm tra xem có cần tìm kiếm thông tin bổ sung không (legacy - giữ lại để tương thích)
+    async function shouldSearchWeb(userQuestion, contextText) {
+        // Kiểm tra cài đặt người dùng
+        const settings = await new Promise(resolve => {
+            chrome.storage.sync.get(['enableWebSearch'], result => {
+                resolve(result);
+            });
+        });
+        
+        // Nếu người dùng tắt tính năng, không tìm kiếm
+        if (settings.enableWebSearch === false) {
+            return false;
+        }
+        
+        // Các từ khóa cho thấy cần tìm kiếm thông tin mới nhất hoặc bổ sung
+        const searchKeywords = [
+            'mới nhất', 'cập nhật', 'hiện tại', 'gần đây', 'tin tức',
+            'thống kê', 'số liệu', 'dữ liệu', 'nghiên cứu', 'báo cáo',
+            'so sánh', 'khác biệt', 'tương tự', 'liên quan',
+            'thêm thông tin', 'chi tiết hơn', 'giải thích thêm',
+            'ví dụ', 'trường hợp', 'ứng dụng', 'thực tế'
+        ];
+        
+        const questionLower = userQuestion.toLowerCase();
+        const hasSearchKeywords = searchKeywords.some(keyword => questionLower.includes(keyword));
+        
+        // Kiểm tra xem câu hỏi có vượt ra ngoài nội dung hiện tại không
+        const contextLower = contextText.toLowerCase();
+        const questionWords = questionLower.split(' ').filter(word => word.length > 3);
+        const contextWords = contextLower.split(' ');
+        
+        // Đếm số từ trong câu hỏi không có trong context
+        const missingWords = questionWords.filter(word => !contextWords.some(cWord => cWord.includes(word)));
+        const missingRatio = missingWords.length / questionWords.length;
+        
+        // Tìm kiếm nếu:
+        // 1. Có từ khóa yêu cầu tìm kiếm
+        // 2. Hoặc tỷ lệ từ không có trong context > 50%
+        return hasSearchKeywords || missingRatio > 0.5;
+    }
+    
+    // Hàm tìm kiếm thông tin cho câu hỏi
+    async function searchWebForQuestion(userQuestion) {
+        return new Promise((resolve, reject) => {
+            // Trích xuất từ khóa chính từ câu hỏi
+            const searchQuery = extractSearchKeywords(userQuestion);
+            
+            chrome.runtime.sendMessage({
+                type: "WEB_SEARCH_REQUEST",
+                query: searchQuery,
+                maxResults: 3
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
+                
+                if (response.success) {
+                    resolve(response.results);
+                } else {
+                    reject(new Error(response.error));
+                }
+            });
+        });
+    }
+    
+    // Hàm trích xuất từ khóa tìm kiếm từ câu hỏi
+    function extractSearchKeywords(question) {
+        // Loại bỏ các từ không cần thiết
+        const stopWords = ['là', 'gì', 'như', 'thế', 'nào', 'tại', 'sao', 'có', 'thể', 'được', 'cho', 'về', 'của', 'và', 'hoặc', 'nhưng', 'mà', 'để'];
+        const words = question.toLowerCase().split(' ').filter(word => 
+            word.length > 2 && !stopWords.includes(word)
+        );
+        
+        // Lấy 3-5 từ quan trọng nhất
+        return words.slice(0, 5).join(' ');
+    }
+    
+    // Hàm định dạng kết quả tìm kiếm
+    function formatSearchResults(results) {
+        if (!results || results.length === 0) {
+            return "";
+        }
+        
+        let formatted = "=== THÔNG TIN BỔ SUNG ===\n\n";
+        results.forEach((result, index) => {
+            formatted += `${index + 1}. **${result.title}** (${result.source})\n`;
+            formatted += `${result.snippet}\n`;
+            if (result.url) {
+                formatted += `Nguồn: ${result.url}\n`;
+            }
+            formatted += "\n";
+        });
+        
+        return formatted;
     }
 });
