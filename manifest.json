@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Gemini Tóm Tắt & Đọc",
-  "version": "3.0",
+  "version": "3.0.2",
   "description": "Tóm tắt nội dung trang web, YouTube và Google Doc bằng Google Gemini API và đọc văn bản với nhiều tùy chọn giọng đọc.",
   "permissions": [
     "activeTab",

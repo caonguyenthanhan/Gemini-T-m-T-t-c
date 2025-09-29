@@ -85,7 +85,7 @@ try {
   // --- HÀM GỌI API GEMINI ---
   // Cập nhật hàm callGeminiApi để xử lý nội dung từ YouTube và Google Doc
   async function callGeminiApi(apiKey, textToSummarize, fromContextMenu = false, port = null) {
-      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
       
       // Kiểm tra nếu là nội dung YouTube
       let prompt = "";
