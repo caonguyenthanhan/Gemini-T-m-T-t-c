@@ -35,6 +35,7 @@ Tiện ích mở rộng Chrome "Gemini Tóm Tắt & Đọc" hiện đã có các
 9. **[MỚI]** Start_Gemini_TTS_Server.bat khởi động server bằng PowerShell Start-Process chạy nền, ghi log và tự đóng cửa sổ sau khi kích hoạt
 10. **[MỚI]** Batch đã được nâng cấp: tự tạo venv trong thư mục private, tự kiểm tra/cài đặt phụ thuộc (flask, flask-cors, gTTS) nếu thiếu, và khởi chạy server bằng python.exe trong venv ở chế độ nền; đã xác nhận port 5001 mở và gọi POST /tts trả về audioContent thành công
 11. **[MỚI]** Khi kiểm thử bằng PowerShell, gửi body JSON dạng UTF-8 bytes (Content-Type: application/json; charset=utf-8) để tránh lỗi "Invalid JSON" từ Flask (đối với một số cấu hình PowerShell)
+12. **[MỚI]** Đã di chuyển local_tts_server.py ra thư mục gốc dự án; batch cập nhật để chạy từ thư mục gốc và vẫn sử dụng venv tại private/venv
 
 ## Các bước tiếp theo
 

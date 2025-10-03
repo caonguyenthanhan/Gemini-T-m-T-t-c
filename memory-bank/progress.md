@@ -26,6 +26,7 @@
 16. **[MỚI]** Start_Gemini_TTS_Server.bat chạy nền bằng PowerShell, ghi log và tự đóng sau khi khởi chạy
 17. **[MỚI]** Batch nâng cấp: tự tạo venv, tự cài đặt phụ thuộc nếu thiếu, khởi chạy server bằng python.exe trong venv; đã kiểm thử mở port 5001 thành công
 18. **[MỚI]** POST /tts kiểm thử thành công từ PowerShell khi gửi JSON UTF-8 bytes, nhận audioContent và phát được ở read window
+19. **[MỚI]** Di chuyển local_tts_server.py ra thư mục gốc dự án và cập nhật batch để chạy từ thư mục gốc
 
 ## Đang tiến hành
 
