@@ -20,6 +20,12 @@ try {
       title: "Tóm tắt văn bản đã chọn",
       contexts: ["selection"]
     });
+
+    chrome.contextMenus.create({
+      id: "readSelection",
+      title: "Đọc phần đã chọn",
+      contexts: ["selection"]
+    });
   });
   
   // Xử lý khi người dùng nhấp vào context menu
@@ -61,6 +67,13 @@ try {
           alert("Vui lòng nhập Gemini API Key trong popup của extension.");
           chrome.action.openPopup();
         }
+      });
+    } else if (info.menuItemId === "readSelection" && info.selectionText) {
+      const selected = info.selectionText.trim();
+      if (!selected) return;
+      chrome.storage.local.set({ selectedReadText: selected }, function() {
+        const url = chrome.runtime.getURL('read.html');
+        chrome.windows.create({ url, type: 'popup', width: 520, height: 700, focused: true });
       });
     }
   });
@@ -178,6 +191,52 @@ try {
   // Bộ nhớ đệm riêng cho chat
   const ttsChatCache = new Map();
 
+  async function callLocalTtsApi(config, text, port = null, readingIndex = -1, sendResponseCallback = null, isFromChat = false) {
+      isFromChat = isFromChat || (port && port.name === "chat");
+      console.log("Bắt đầu gọi Local TTS", port ? "với port" : "không có port", "cho đoạn", readingIndex, isFromChat ? "(từ chat)" : "");
+      if (!text || text.trim() === "") {
+          const errorMsg = "Văn bản trống, không thể chuyển đổi thành giọng nói";
+          sendTTSResponse(port, false, null, errorMsg, readingIndex, sendResponseCallback);
+          return;
+      }
+      const cacheKey = `local_${(config && config.languageCode) || 'vi-VN'}_${text}`;
+      const cache = isFromChat ? ttsChatCache : ttsCache;
+      if (cache.has(cacheKey)) {
+          sendTTSResponse(port, true, cache.get(cacheKey), null, readingIndex, sendResponseCallback);
+          return;
+      }
+      const url = 'http://127.0.0.1:5001/tts';
+      try {
+          const response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  text: text,
+                  languageCode: (config && config.languageCode) || 'vi-VN'
+              })
+          });
+          if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`Lỗi Local TTS (${response.status}): ${errorText}`);
+          }
+          const data = await response.json();
+          if (!data.success || !data.audioContent) {
+              throw new Error(data.error || "Không nhận được dữ liệu audio từ Local TTS");
+          }
+          cache.set(cacheKey, data.audioContent);
+          if (cache.size > 50) {
+              const oldestKey = cache.keys().next().value;
+              cache.delete(oldestKey);
+          }
+          sendTTSResponse(port, true, data.audioContent, null, readingIndex, sendResponseCallback);
+      } catch (error) {
+          const errMsg = error.message && error.message.includes('Failed to fetch')
+              ? "Không thể kết nối máy chủ TTS cục bộ tại http://127.0.0.1:5001/tts. Vui lòng đảm bảo server đang chạy."
+              : error.message;
+          sendTTSResponse(port, false, null, errMsg, readingIndex, sendResponseCallback);
+      }
+  }
+  
   async function callGoogleTtsApi(config, text, port = null, readingIndex = -1, sendResponseCallback = null, isFromChat = false) {
       // Xác định nguồn yêu cầu: từ chat hoặc từ port chat
       isFromChat = isFromChat || (port && port.name === "chat");
@@ -337,7 +396,11 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
                   callGeminiApi(request.apiKey, request.content, false, port);
               } else if (request.type === "TTS_REQUEST") {
                   console.log("Xử lý yêu cầu TTS từ", port.name);
-                  callGoogleTtsApi(request.config, request.text, port, request.readingIndex, null);
+                  if (request.config && request.config.engine === 'local') {
+                      callLocalTtsApi(request.config, request.text, port, request.readingIndex, null);
+                  } else {
+                      callGoogleTtsApi(request.config, request.text, port, request.readingIndex, null);
+                  }
               }
           });
       } else if (port.name === "chat") {
@@ -345,16 +408,17 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
               console.log("Nhận tin nhắn từ chat:", request.type);
               if (request.type === "TTS_REQUEST") {
                   console.log("Xử lý yêu cầu TTS từ chat cho đoạn", request.readingIndex);
-                  callGoogleTtsApi(request.config, request.text, port, request.readingIndex, null);
+                  if (request.config && request.config.engine === 'local') {
+                      callLocalTtsApi(request.config, request.text, port, request.readingIndex, null);
+                  } else {
+                      callGoogleTtsApi(request.config, request.text, port, request.readingIndex, null);
+                  }
               }
           });
-          
       }
-       
-       // Xử lý khi port bị ngắt kết nối
-       port.onDisconnect.addListener(() => {
-           console.log("Port", port.name, "bị ngắt kết nối");
-       });
+      port.onDisconnect.addListener(() => {
+          console.log("Port", port.name, "bị ngắt kết nối");
+      });
   });
 
   // Cập nhật listener cho tin nhắn
@@ -362,14 +426,10 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
       console.log("Nhận tin nhắn từ content script:", request.type);
       if (request.type === "SUMMARIZE_REQUEST") {
           console.log("Xử lý yêu cầu tóm tắt");
-          // Xử lý không đồng bộ và gửi phản hồi sau
           callGeminiApi(request.apiKey, request.content)
-              .then(result => {
-                  // Không cần làm gì vì kết quả đã được gửi qua sendMessage
-              })
+              .then(result => {})
               .catch(error => {
                   console.error("Lỗi khi gọi Gemini API:", error);
-                  // Gửi phản hồi lỗi nếu có sendResponse
                   if (sendResponse) {
                       sendResponse({
                           type: "SUMMARY_RESULT",
@@ -378,38 +438,45 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
                       });
                   }
               });
-          // Trả về true để giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
           return true;
       } else if (request.type === "TTS_REQUEST") {
-          // Kiểm tra xem yêu cầu có đến từ chat hay không
           const isFromChat = sender.tab && sender.tab.url && sender.tab.url.includes("chat.html");
           console.log("Xử lý yêu cầu TTS cho đoạn", request.readingIndex, isFromChat ? "từ chat" : "từ popup/summary");
-          
-          // Xử lý không đồng bộ và gửi phản hồi sau
-          callGoogleTtsApi(request.config, request.text, null, request.readingIndex, sendResponse)
-              .then(result => {
-                  // Không cần làm gì vì kết quả đã được gửi qua sendTTSResponse
-              })
-              .catch(error => {
-                  console.error("Lỗi khi gọi Google TTS API:", error);
-                  // Gửi phản hồi lỗi nếu có sendResponse
-                  if (sendResponse) {
-                      sendResponse({
-                          type: "TTS_RESULT",
-                          success: false,
-                          error: error.message,
-                          readingIndex: request.readingIndex
-                      });
-                  }
-              });
-          // Trả về true để giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
+          if (request.config && request.config.engine === 'local') {
+              callLocalTtsApi(request.config, request.text, null, request.readingIndex, sendResponse)
+                  .then(result => {})
+                  .catch(error => {
+                      console.error("Lỗi khi gọi Local TTS:", error);
+                      if (sendResponse) {
+                          sendResponse({
+                              type: "TTS_RESULT",
+                              success: false,
+                              error: error.message,
+                              readingIndex: request.readingIndex
+                          });
+                      }
+                  });
+          } else {
+              callGoogleTtsApi(request.config, request.text, null, request.readingIndex, sendResponse)
+                  .then(result => {})
+                  .catch(error => {
+                      console.error("Lỗi khi gọi Google TTS API:", error);
+                      if (sendResponse) {
+                          sendResponse({
+                              type: "TTS_RESULT",
+                              success: false,
+                              error: error.message,
+                              readingIndex: request.readingIndex
+                          });
+                      }
+                  });
+          }
           return true;
       } else if (request.type === "WEB_SEARCH_REQUEST") {
-          // Xử lý yêu cầu tìm kiếm web
           handleWebSearchRequest(request, sendResponse);
-          return true; // Giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
+          return true;
       }
-      return false; // Đối với các tin nhắn khác
+      return false;
   });
 
   // --- HÀM TÌM KIẾM WEB ---
@@ -533,3 +600,126 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
           return [];
       }
   }
+
+function injectPlayAudioBase64(tabId, base64String) {
+  if (!base64String) return;
+  chrome.scripting.executeScript({
+    target: { tabId },
+    func: (audioB64) => {
+      try {
+        const audio = new Audio(`data:audio/mp3;base64,${audioB64}`);
+        audio.play().catch(err => console.error('Không thể phát audio:', err));
+      } catch (e) {
+        console.error('Lỗi injectPlayAudioBase64:', e);
+      }
+    },
+    args: [base64String]
+  });
+}
+
+function injectBrowserSpeech(tabId, text) {
+  if (!text) return;
+  chrome.scripting.executeScript({
+    target: { tabId },
+    func: (t) => {
+      try {
+        const utter = new SpeechSynthesisUtterance(t);
+        utter.lang = 'vi-VN';
+        speechSynthesis.speak(utter);
+      } catch (e) {
+        console.error('Lỗi injectBrowserSpeech:', e);
+      }
+    },
+    args: [text]
+  });
+}
+
+function showInPageToast(tabId, message) {
+  chrome.scripting.executeScript({
+    target: { tabId },
+    func: (msg) => {
+      try {
+        const toast = document.createElement('div');
+        toast.textContent = msg;
+        toast.style.position = 'fixed';
+        toast.style.bottom = '20px';
+        toast.style.right = '20px';
+        toast.style.zIndex = '999999';
+        toast.style.background = 'rgba(0,0,0,0.8)';
+        toast.style.color = '#fff';
+        toast.style.padding = '10px 14px';
+        toast.style.borderRadius = '8px';
+        toast.style.fontSize = '14px';
+        toast.style.maxWidth = '320px';
+        toast.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+      } catch (e) {
+        console.error('Lỗi showInPageToast:', e);
+      }
+    },
+    args: [message]
+  });
+}
+
+function injectPlayAudioBase64(tabId, base64String, selectedText) {
+  if (!base64String) return;
+  chrome.scripting.executeScript({
+    target: { tabId },
+    func: (audioB64, textForFallback) => {
+      try {
+        function b64ToUint8Array(b64) {
+          const binary_string = atob(b64);
+          const len = binary_string.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binary_string.charCodeAt(i);
+          }
+          return bytes;
+        }
+        const bytes = b64ToUint8Array(audioB64);
+        const blob = new Blob([bytes], { type: 'audio/mpeg' });
+        const url = URL.createObjectURL(blob);
+        const audio = document.createElement('audio');
+        audio.src = url;
+        audio.style.display = 'none';
+        audio.preload = 'auto';
+        audio.volume = 1.0;
+        audio.setAttribute('playsinline', '');
+        document.body.appendChild(audio);
+        audio.play().catch(err => {
+          console.error('Không thể phát audio:', err);
+          try {
+            const toast = document.createElement('div');
+            toast.textContent = 'Không thể phát âm thanh. Đang dùng giọng đọc của trình duyệt...';
+            toast.style.position = 'fixed';
+            toast.style.bottom = '20px';
+            toast.style.right = '20px';
+            toast.style.zIndex = '999999';
+            toast.style.background = 'rgba(0,0,0,0.8)';
+            toast.style.color = '#fff';
+            toast.style.padding = '10px 14px';
+            toast.style.borderRadius = '8px';
+            toast.style.fontSize = '14px';
+            toast.style.maxWidth = '320px';
+            toast.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2500);
+          } catch (_) {}
+          try {
+            if (textForFallback && typeof speechSynthesis !== 'undefined') {
+              const utter = new SpeechSynthesisUtterance(textForFallback);
+              utter.lang = 'vi-VN';
+              speechSynthesis.speak(utter);
+            }
+          } catch (e2) {
+            console.error('Fallback speechSynthesis lỗi:', e2);
+          }
+        });
+      } catch (e) {
+        console.error('Lỗi injectPlayAudioBase64:', e);
+      }
+    },
+    args: [base64String, selectedText]
+  });
+}

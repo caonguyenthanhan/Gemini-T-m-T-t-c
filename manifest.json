@@ -14,7 +14,9 @@
     "https://generativelanguage.googleapis.com/",
     "https://tts-api.xfyun.cn/",
     "https://www.youtube.com/*",
-    "https://docs.google.com/*"
+    "https://docs.google.com/*",
+    "http://127.0.0.1:5001/*",
+    "http://localhost:5001/*"
   ],
   "action": {
     "default_popup": "popup.html",

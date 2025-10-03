@@ -368,6 +368,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 
                 // Thêm API key vào config
                 config.apiKey = apiKey;
+                config.engine = 'google';
                 
                 // Thiết lập timeout để xử lý trường hợp không nhận được phản hồi từ port
                 const portTimeoutId = setTimeout(() => {
@@ -603,7 +604,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 currentReadingIndex = readingIndex;
                 startBrowserReading(text);
             }
-        } else { // Google TTS
+        } else if (ttsEngineSelect.value === 'google') {
             chrome.storage.sync.get(['googleTtsConfig'], function(result) {
                 if (!result.googleTtsConfig || !result.googleTtsConfig.apiKey) {
                     console.error("Vui lòng nhập và lưu Google Cloud API Key trong popup của tiện ích.");
@@ -617,13 +618,30 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 playPauseBtn.disabled = true;
                 playPauseBtn.textContent = 'Đang tải...';
-                // Cập nhật nút đọc của tin nhắn hiện tại nếu có
                 updateCurrentMessageReadButton('⏳ Đang tải...');
-                
-                // Sử dụng hàm requestTTS để gửi yêu cầu
                 console.log("Sử dụng Google TTS với API key:", result.googleTtsConfig.apiKey.substring(0, 5) + "...");
                 requestTTS(text, readingIndex);
             });
+        } else if (ttsEngineSelect.value === 'local') {
+            playPauseBtn.disabled = true;
+            playPauseBtn.textContent = 'Đang tải...';
+            updateCurrentMessageReadButton('⏳ Đang tải...');
+            const config = { engine: 'local', languageCode: 'vi-VN' };
+            const connected = ensureConnected();
+            if (connected) {
+                try {
+                    connected.postMessage({
+                        type: "TTS_REQUEST",
+                        config: config,
+                        text: text,
+                        readingIndex: readingIndex
+                    });
+                } catch (error) {
+                    sendTTSWithMessage(config, text, readingIndex);
+                }
+            } else {
+                sendTTSWithMessage(config, text, readingIndex);
+            }
         }
     }
     

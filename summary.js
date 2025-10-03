@@ -103,8 +103,6 @@ document.addEventListener('DOMContentLoaded', function () {
     // Hàm gửi yêu cầu TTS đến background script
     function requestTTS(text) {
         console.log("Bắt đầu gửi yêu cầu TTS cho văn bản:", text.substring(0, 50) + "...");
-        
-        // Lấy API key từ storage
         chrome.storage.sync.get(['googleTtsConfig'], function(result) {
             const apiKey = result.googleTtsConfig?.apiKey;
             if (!apiKey) {
@@ -115,31 +113,19 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             
             console.log("Đã lấy được API key, chuẩn bị gửi yêu cầu TTS");
-            
-            // Cấu hình cho TTS
-            const config = {
-                apiKey: apiKey
-            };
-            
-            // Gửi yêu cầu TTS
+            const config = { apiKey: apiKey, engine: 'google' };
             const connected = ensureConnected();
             if (connected) {
-                console.log("Sử dụng kết nối port để gửi yêu cầu TTS");
                 try {
                     connected.postMessage({
                         type: "TTS_REQUEST",
                         config: config,
                         text: text
                     });
-                    console.log("Đã gửi yêu cầu TTS qua port");
                 } catch (error) {
-                    console.error("Lỗi khi gửi yêu cầu TTS qua port:", error);
-                    // Thử lại với sendMessage
                     sendTTSWithMessage(config, text);
                 }
             } else {
-                // Nếu không thể kết nối port, sử dụng sendMessage
-                console.log("Không thể kết nối port, sử dụng sendMessage");
                 sendTTSWithMessage(config, text);
             }
         });
@@ -196,6 +182,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Sử dụng hàm requestTTS để gửi yêu cầu
                 requestTTS(textToRead);
             });
+        } else if (ttsEngineSelect.value === 'local') {
+            playPauseBtn.disabled = true;
+            playPauseBtn.textContent = 'Đang tải...';
+            const config = { engine: 'local', languageCode: 'vi-VN' };
+            const connected = ensureConnected();
+            if (connected) {
+                try {
+                    connected.postMessage({ type: "TTS_REQUEST", config: config, text: textToRead });
+                } catch (error) {
+                    sendTTSWithMessage(config, textToRead);
+                }
+            } else {
+                sendTTSWithMessage(config, textToRead);
+            }
         }
     });
 

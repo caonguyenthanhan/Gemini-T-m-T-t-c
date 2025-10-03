@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Đọc phần đã chọn</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; max-width: 640px; margin: 0 auto; line-height: 1.6; }
+    h1 { font-size: 20px; color: #4285F4; margin-bottom: 12px; }
+    #selected-text { padding: 12px; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 4px; white-space: pre-wrap; margin-bottom: 12px; max-height: 220px; overflow-y: auto; }
+    #controls { margin-top: 10px; margin-bottom: 14px; }
+    button { padding: 10px 14px; margin-right: 10px; cursor: pointer; border: none; border-radius: 4px; color: white; font-weight: bold; }
+    button:hover { opacity: 0.9; }
+    #playPauseBtn { background-color: #34A853; }
+    #stopBtn { background-color: #EA4335; }
+    select { padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+    #status { font-size: 13px; color: #666; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Đọc phần đã chọn</h1>
+  <div id="controls">
+    <label for="ttsEngine">Chọn giọng đọc:</label>
+    <select id="ttsEngine">
+      <option value="browser">Giọng đọc của trình duyệt</option>
+      <option value="google">Giọng đọc Google Cloud</option>
+      <option value="local">Giọng đọc cục bộ (Local)</option>
+    </select>
+    <button id="playPauseBtn">▶️ Đọc</button>
+    <button id="stopBtn">⏹️ Dừng</button>
+    <div id="status"></div>
+  </div>
+  <h2>Đoạn văn bản được chọn</h2>
+  <div id="selected-text">Đang tải...</div>
+  <script src="read.js"></script>
+</body>
+</html>

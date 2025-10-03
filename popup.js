@@ -220,9 +220,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!textToRead || textToRead.startsWith("Trạng thái:") || textToRead.startsWith("Lỗi")) {
             return;
         }
-        
-        stopReading(); // Dừng mọi thứ trước khi bắt đầu
-
+        stopReading();
         if (ttsEngineSelect.value === 'browser') {
             if (speechSynthesis.paused) {
                 speechSynthesis.resume();
@@ -233,7 +231,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 startBrowserReading(textToRead);
             }
-        } else { // Google TTS
+        } else if (ttsEngineSelect.value === 'google') {
             chrome.storage.sync.get('googleTtsConfig', function(result) {
                 if (!result.googleTtsConfig || !result.googleTtsConfig.apiKey) {
                     resultBox.textContent = "Vui lòng nhập và lưu Google Cloud API Key.";
@@ -241,24 +239,24 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 playPauseBtn.disabled = true;
                 playPauseBtn.textContent = 'Đang tải...';
-                
-                // Đảm bảo port kết nối trước khi gửi tin nhắn
                 const activePort = ensureConnected();
+                const config = Object.assign({}, result.googleTtsConfig, { engine: 'google' });
                 if (activePort) {
-                    activePort.postMessage({
-                        type: "TTS_REQUEST",
-                        config: result.googleTtsConfig,
-                        text: textToRead
-                    });
+                    activePort.postMessage({ type: "TTS_REQUEST", config: config, text: textToRead });
                 } else {
-                    // Nếu không thể kết nối, sử dụng chrome.runtime.sendMessage thay thế
-                    chrome.runtime.sendMessage({
-                        type: "TTS_REQUEST",
-                        config: result.googleTtsConfig,
-                        text: textToRead
-                    });
+                    chrome.runtime.sendMessage({ type: "TTS_REQUEST", config: config, text: textToRead });
                 }
             });
+        } else if (ttsEngineSelect.value === 'local') {
+            playPauseBtn.disabled = true;
+            playPauseBtn.textContent = 'Đang tải...';
+            const activePort = ensureConnected();
+            const config = { engine: 'local', languageCode: 'vi-VN' };
+            if (activePort) {
+                activePort.postMessage({ type: "TTS_REQUEST", config: config, text: textToRead });
+            } else {
+                chrome.runtime.sendMessage({ type: "TTS_REQUEST", config: config, text: textToRead });
+            }
         }
     });
 
