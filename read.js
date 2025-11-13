@@ -57,7 +57,7 @@ function requestLocalTTS(text) {
   setStatus('Đang gọi Local TTS...');
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 10000);
-  return fetch('http://127.0.0.1:5001/tts', {
+  return fetch('http://127.0.0.1:8765/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text: text, languageCode: 'vi-VN' }),

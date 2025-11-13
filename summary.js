@@ -167,7 +167,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 startBrowserReading(textToRead);
             }
-        } else { // Google TTS
+        } else if (ttsEngineSelect.value === 'google') { // Google TTS
             chrome.storage.sync.get(['googleTtsConfig'], function(result) {
                 if (!result.googleTtsConfig || !result.googleTtsConfig.apiKey) {
                     console.error("Lỗi: Chưa cấu hình Google API Key");

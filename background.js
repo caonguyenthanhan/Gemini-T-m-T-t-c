@@ -21,6 +21,20 @@ try {
       contexts: ["selection"]
     });
 
+    // Menu tóm tắt ảnh
+    chrome.contextMenus.create({
+      id: "summarizeImage",
+      title: "Tóm tắt ảnh này",
+      contexts: ["image"]
+    });
+
+    // Menu gửi văn bản + ảnh đến Gemini (tự động dùng thứ có sẵn)
+    chrome.contextMenus.create({
+      id: "summarizeMixed",
+      title: "Gửi văn bản/ảnh đến Gemini",
+      contexts: ["selection", "image"]
+    });
+
     chrome.contextMenus.create({
       id: "readSelection",
       title: "Đọc phần đã chọn",
@@ -68,6 +82,60 @@ try {
           chrome.action.openPopup();
         }
       });
+    } else if (info.menuItemId === "summarizeImage" && info.srcUrl) {
+      chrome.storage.sync.get(['geminiApiKey'], async function(result) {
+        const apiKey = result.geminiApiKey;
+        if (!apiKey) {
+          alert("Vui lòng nhập Gemini API Key trong popup của extension.");
+          chrome.action.openPopup();
+          return;
+        }
+        try {
+          const inlineData = await fetchImageInlineData(info.srcUrl);
+          await callGeminiVisionApi(apiKey, inlineData, null, '', true);
+        } catch (e) {
+          console.error('Lỗi tóm tắt ảnh từ context menu:', e);
+          chrome.storage.sync.set({ contextMenuSummary: `Lỗi khi tóm tắt ảnh: ${e.message}` }, function() {
+            chrome.windows.create({
+              url: chrome.runtime.getURL('summary.html'),
+              type: 'popup',
+              width: 800,
+              height: 600
+            });
+          });
+        }
+      });
+    } else if (info.menuItemId === "summarizeMixed") {
+      const selected = (info.selectionText || '').trim();
+      const srcUrl = info.srcUrl || '';
+      chrome.storage.sync.get(['geminiApiKey'], async function(result) {
+        const apiKey = result.geminiApiKey;
+        if (!apiKey) {
+          alert("Vui lòng nhập Gemini API Key trong popup của extension.");
+          chrome.action.openPopup();
+          return;
+        }
+        try {
+          if (srcUrl) {
+            const inlineData = await fetchImageInlineData(srcUrl);
+            await callGeminiVisionApi(apiKey, inlineData, null, selected, true);
+          } else if (selected) {
+            await callGeminiApi(apiKey, selected, true);
+          } else {
+            alert('Không thấy văn bản hoặc ảnh để gửi.');
+          }
+        } catch (e) {
+          console.error('Lỗi tóm tắt văn bản/ảnh:', e);
+          chrome.storage.sync.set({ contextMenuSummary: `Lỗi khi tóm tắt: ${e.message}` }, function() {
+            chrome.windows.create({
+              url: chrome.runtime.getURL('summary.html'),
+              type: 'popup',
+              width: 800,
+              height: 600
+            });
+          });
+        }
+      });
     } else if (info.menuItemId === "readSelection" && info.selectionText) {
       const selected = info.selectionText.trim();
       if (!selected) return;
@@ -104,25 +172,38 @@ try {
   async function callGeminiApi(apiKey, textToSummarize, fromContextMenu = false, port = null) {
       const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
       
+      // Tối ưu hóa độ dài văn bản để tránh timeout
+      const MAX_CONTENT_LENGTH = 8000; // Giới hạn 8000 ký tự
+      let optimizedText = textToSummarize;
+      
+      if (textToSummarize.length > MAX_CONTENT_LENGTH) {
+          // Cắt văn bản và thêm thông báo
+          optimizedText = textToSummarize.substring(0, MAX_CONTENT_LENGTH) + "\n\n[Văn bản đã được cắt ngắn để tối ưu hóa tốc độ xử lý]";
+      }
+      
       // Kiểm tra nếu là nội dung YouTube
       let prompt = "";
-      if (textToSummarize.startsWith("Video YouTube:")) {
-          prompt = `Với vai trò là một trợ lý AI chuyên nghiệp, hãy tóm tắt nội dung video YouTube này dựa trên thông tin được cung cấp. Tóm tắt bằng tiếng Việt trong khoảng 3 đến 5 câu, giữ lại những ý chính và trình bày một cách cô đọng, mạch lạc:\n\n---\n\n${textToSummarize}`;
+      if (optimizedText.startsWith("Video YouTube:")) {
+          prompt = `Với vai trò là một trợ lý AI chuyên nghiệp, hãy tóm tắt nội dung video YouTube này dựa trên thông tin được cung cấp. Tóm tắt bằng tiếng Việt trong khoảng 3 đến 5 câu, giữ lại những ý chính và trình bày một cách cô đọng, mạch lạc:\n\n---\n\n${optimizedText}`;
       }
       // Kiểm tra nếu là nội dung Google Doc
-      else if (textToSummarize.startsWith("Google Doc:")) {
-        prompt = `Với vai trò là một trợ lý AI chuyên nghiệp, hãy tóm tắt nội dung tài liệu Google Doc này. Tóm tắt bằng tiếng Việt trong khoảng 3 đến 5 câu, giữ lại những ý chính và trình bày một cách cô đọng, mạch lạc:\n\n---\n\n${textToSummarize}`;
+      else if (optimizedText.startsWith("Google Doc:")) {
+        prompt = `Với vai trò là một trợ lý AI chuyên nghiệp, hãy tóm tắt nội dung tài liệu Google Doc này. Tóm tắt bằng tiếng Việt trong khoảng 3 đến 5 câu, giữ lại những ý chính và trình bày một cách cô đọng, mạch lạc:\n\n---\n\n${optimizedText}`;
         }
       // Nội dung trang web thông thường
       else {
-          prompt = `Với vai trò là một trợ lý AI chuyên nghiệp, hãy tóm tắt nội dung sau đây bằng tiếng Việt trong khoảng 3 đến 5 câu. Giữ lại những ý chính, quan trọng nhất và trình bày một cách cô đọng, mạch lạc:\n\n---\n\n${textToSummarize}`;
+          prompt = `Với vai trò là một trợ lý AI chuyên nghiệp, hãy tóm tắt nội dung sau đây bằng tiếng Việt trong khoảng 3 đến 5 câu. Giữ lại những ý chính, quan trọng nhất và trình bày một cách cô đọng, mạch lạc:\n\n---\n\n${optimizedText}`;
       }
   
       try {
-          // Phần còn lại giữ nguyên
+          // Tạo AbortController để quản lý timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 giây timeout
+          
           const response = await fetch(apiEndpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
               body: JSON.stringify({
                   contents: [{ parts: [{ text: prompt }] }],
                   safetySettings: [
@@ -133,6 +214,9 @@ try {
                   ]
               })
           });
+          
+          // Clear timeout nếu request thành công
+          clearTimeout(timeoutId);
   
           const data = await response.json();
           if (!response.ok) {
@@ -164,9 +248,18 @@ try {
   
       } catch (error) {
           console.error("Lỗi khi gọi Gemini API:", error);
+          
+          // Xử lý lỗi timeout riêng biệt
+          let errorMessage = error.message;
+          if (error.name === 'AbortError') {
+              errorMessage = "Yêu cầu tóm tắt đã hết thời gian chờ (30 giây). Vui lòng thử lại với văn bản ngắn hơn.";
+          } else if (error.message.includes('fetch')) {
+              errorMessage = "Không thể kết nối với Gemini API. Vui lòng kiểm tra kết nối mạng.";
+          }
+          
           if (fromContextMenu) {
               // Lưu thông báo lỗi vào storage
-              chrome.storage.sync.set({ contextMenuSummary: `Lỗi khi tóm tắt: ${error.message}` }, function() {
+              chrome.storage.sync.set({ contextMenuSummary: `Lỗi khi tóm tắt: ${errorMessage}` }, function() {
                   // Mở trang summary.html trong cửa sổ mới
                   chrome.windows.create({
                       url: chrome.runtime.getURL('summary.html'),
@@ -177,12 +270,145 @@ try {
               });
           } else {
               if (port) {
-                  port.postMessage({ type: "SUMMARY_RESULT", success: false, error: error.message });
+                  port.postMessage({ type: "SUMMARY_RESULT", success: false, error: errorMessage });
               } else {
-                  chrome.runtime.sendMessage({ type: "SUMMARY_RESULT", success: false, error: error.message });
+                  chrome.runtime.sendMessage({ type: "SUMMARY_RESULT", success: false, error: errorMessage });
               }
           }
       }
+  }
+
+  function extractTextFromGeminiResponse(data) {
+      try {
+          if (!data || !data.candidates || data.candidates.length === 0) return '';
+          const parts = data.candidates[0]?.content?.parts || [];
+          for (const part of parts) {
+              if (part.text && typeof part.text === 'string') {
+                  return part.text;
+              }
+          }
+          return '';
+      } catch (e) {
+          console.error('Lỗi trích xuất văn bản từ phản hồi Gemini:', e);
+          return '';
+      }
+  }
+
+  async function callGeminiVisionApi(apiKey, imageInlineData, port = null, additionalText = '', fromContextMenu = false) {
+      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+      const prompt = 'Hãy tóm tắt nội dung chính của ảnh bằng tiếng Việt, súc tích và dễ hiểu.';
+
+      try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+          const parts = [{ inline_data: imageInlineData }];
+          if (additionalText && additionalText.trim()) {
+              parts.push({ text: additionalText.trim() });
+          }
+          parts.push({ text: prompt });
+
+          const body = {
+              contents: [
+                  {
+                      parts: parts
+                  }
+              ],
+              safetySettings: [
+                  { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+              ]
+          };
+
+          const response = await fetch(apiEndpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
+              body: JSON.stringify(body)
+          });
+
+          clearTimeout(timeoutId);
+
+          const data = await response.json();
+          if (!response.ok) {
+              throw new Error(`Lỗi API (${response.status}): ${data.error?.message || 'Unknown error'}`);
+          }
+
+          const text = extractTextFromGeminiResponse(data).trim();
+          if (!text) {
+              throw new Error('Không nhận được kết quả tóm tắt từ Gemini.');
+          }
+
+          if (fromContextMenu) {
+              chrome.storage.sync.set({ contextMenuSummary: text }, function() {
+                  chrome.windows.create({
+                      url: chrome.runtime.getURL('summary.html'),
+                      type: 'popup',
+                      width: 800,
+                      height: 600
+                  });
+              });
+          } else {
+              if (port) {
+                  port.postMessage({ type: 'SUMMARY_RESULT', success: true, summary: text });
+              } else {
+                  chrome.runtime.sendMessage({ type: 'SUMMARY_RESULT', success: true, summary: text });
+              }
+          }
+      } catch (error) {
+          console.error('Lỗi khi gọi Gemini Vision API:', error);
+          const errorMessage = error.name === 'AbortError'
+              ? 'Yêu cầu tóm tắt ảnh đã hết thời gian chờ (30 giây).'
+              : (error.message || 'Lỗi không xác định khi tóm tắt ảnh.');
+
+          if (fromContextMenu) {
+              chrome.storage.sync.set({ contextMenuSummary: `Lỗi khi tóm tắt ảnh: ${errorMessage}` }, function() {
+                  chrome.windows.create({
+                      url: chrome.runtime.getURL('summary.html'),
+                      type: 'popup',
+                      width: 800,
+                      height: 600
+                  });
+              });
+          } else {
+              if (port) {
+                  port.postMessage({ type: 'SUMMARY_RESULT', success: false, error: errorMessage });
+              } else {
+                  chrome.runtime.sendMessage({ type: 'SUMMARY_RESULT', success: false, error: errorMessage });
+              }
+          }
+      }
+  }
+
+  // --- HÀM HỖ TRỢ: TẢI ẢNH VÀ CHUYỂN BASE64 ---
+  async function fetchImageInlineData(url) {
+      const response = await fetch(url);
+      if (!response.ok) {
+          throw new Error(`Không thể tải ảnh (${response.status}).`);
+      }
+      const mimeHeader = response.headers.get('content-type');
+      const mimeGuess = guessMimeFromUrl(url);
+      const mime = mimeHeader || mimeGuess || 'image/jpeg';
+      const buffer = await response.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const wordArray = CryptoJS.lib.WordArray.create(bytes);
+      const base64 = CryptoJS.enc.Base64.stringify(wordArray);
+      return { mime_type: mime, data: base64 };
+  }
+
+  function guessMimeFromUrl(url) {
+      try {
+          const lower = url.split('?')[0].toLowerCase();
+          if (lower.endsWith('.png')) return 'image/png';
+          if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+          if (lower.endsWith('.gif')) return 'image/gif';
+          if (lower.endsWith('.webp')) return 'image/webp';
+          if (lower.endsWith('.bmp')) return 'image/bmp';
+          if (lower.endsWith('.svg')) return 'image/svg+xml';
+      } catch (e) {}
+      return null;
   }
   
   // --- HÀM GỌI API GOOGLE TTS ---
@@ -191,47 +417,274 @@ try {
   // Bộ nhớ đệm riêng cho chat
   const ttsChatCache = new Map();
 
+  // Text Chunker class - inline để sử dụng trong background script
+  class TextChunker {
+      constructor(options = {}) {
+          this.maxChunkLength = options.maxChunkLength || 500;
+          this.minChunkLength = options.minChunkLength || 50;
+          this.sentenceBreakers = options.sentenceBreakers || ['.', '!', '?', '。', '！', '？'];
+          this.phraseBreakers = options.phraseBreakers || [',', ';', ':', '，', '；', '：'];
+      }
+
+      chunkText(text) {
+          if (!text || text.trim().length === 0) return [];
+          text = text.trim();
+          if (text.length <= this.maxChunkLength) return [text];
+
+          const chunks = [];
+          let currentChunk = '';
+          const sentences = this.splitBySentences(text);
+          
+          for (const sentence of sentences) {
+              if (sentence.length > this.maxChunkLength) {
+                  if (currentChunk.trim()) {
+                      chunks.push(currentChunk.trim());
+                      currentChunk = '';
+                  }
+                  const subChunks = this.splitLongSentence(sentence);
+                  chunks.push(...subChunks);
+              } else {
+                  const potentialChunk = currentChunk + (currentChunk ? ' ' : '') + sentence;
+                  if (potentialChunk.length <= this.maxChunkLength) {
+                      currentChunk = potentialChunk;
+                  } else {
+                      if (currentChunk.trim()) chunks.push(currentChunk.trim());
+                      currentChunk = sentence;
+                  }
+              }
+          }
+          
+          if (currentChunk.trim()) chunks.push(currentChunk.trim());
+          return this.optimizeChunks(chunks);
+      }
+
+      splitBySentences(text) {
+          const sentences = [];
+          let currentSentence = '';
+          
+          for (let i = 0; i < text.length; i++) {
+              const char = text[i];
+              currentSentence += char;
+              
+              if (this.sentenceBreakers.includes(char)) {
+                  if (char === '.' && i > 0 && i < text.length - 1) {
+                      const prevChar = text[i - 1];
+                      const nextChar = text[i + 1];
+                      if (/\d/.test(prevChar) && /\d/.test(nextChar)) continue;
+                  }
+                  sentences.push(currentSentence.trim());
+                  currentSentence = '';
+              }
+          }
+          
+          if (currentSentence.trim()) sentences.push(currentSentence.trim());
+          return sentences.filter(s => s.length > 0);
+      }
+
+      splitLongSentence(sentence) {
+          if (sentence.length <= this.maxChunkLength) return [sentence];
+          const phrases = this.splitByPhrases(sentence);
+          const chunks = [];
+          let currentChunk = '';
+          
+          for (const phrase of phrases) {
+              if (phrase.length > this.maxChunkLength) {
+                  if (currentChunk.trim()) {
+                      chunks.push(currentChunk.trim());
+                      currentChunk = '';
+                  }
+                  const wordChunks = this.splitByWords(phrase);
+                  chunks.push(...wordChunks);
+              } else {
+                  const potentialChunk = currentChunk + (currentChunk ? ' ' : '') + phrase;
+                  if (potentialChunk.length <= this.maxChunkLength) {
+                      currentChunk = potentialChunk;
+                  } else {
+                      if (currentChunk.trim()) chunks.push(currentChunk.trim());
+                      currentChunk = phrase;
+                  }
+              }
+          }
+          
+          if (currentChunk.trim()) chunks.push(currentChunk.trim());
+          return chunks;
+      }
+
+      splitByPhrases(text) {
+          const phrases = [];
+          let currentPhrase = '';
+          
+          for (let i = 0; i < text.length; i++) {
+              const char = text[i];
+              currentPhrase += char;
+              if (this.phraseBreakers.includes(char)) {
+                  phrases.push(currentPhrase.trim());
+                  currentPhrase = '';
+              }
+          }
+          
+          if (currentPhrase.trim()) phrases.push(currentPhrase.trim());
+          return phrases.filter(p => p.length > 0);
+      }
+
+      splitByWords(text) {
+          const words = text.split(/\s+/);
+          const chunks = [];
+          let currentChunk = '';
+          
+          for (const word of words) {
+              const potentialChunk = currentChunk + (currentChunk ? ' ' : '') + word;
+              if (potentialChunk.length <= this.maxChunkLength) {
+                  currentChunk = potentialChunk;
+              } else {
+                  if (currentChunk.trim()) chunks.push(currentChunk.trim());
+                  if (word.length > this.maxChunkLength) {
+                      const wordChunks = this.hardSplit(word);
+                      chunks.push(...wordChunks);
+                      currentChunk = '';
+                  } else {
+                      currentChunk = word;
+                  }
+              }
+          }
+          
+          if (currentChunk.trim()) chunks.push(currentChunk.trim());
+          return chunks;
+      }
+
+      hardSplit(text) {
+          const chunks = [];
+          for (let i = 0; i < text.length; i += this.maxChunkLength) {
+              chunks.push(text.slice(i, i + this.maxChunkLength));
+          }
+          return chunks;
+      }
+
+      optimizeChunks(chunks) {
+          const optimized = [];
+          let currentChunk = '';
+          
+          for (const chunk of chunks) {
+              if (chunk.length < this.minChunkLength && currentChunk) {
+                  const combined = currentChunk + ' ' + chunk;
+                  if (combined.length <= this.maxChunkLength) {
+                      currentChunk = combined;
+                      continue;
+                  }
+              }
+              
+              if (currentChunk) optimized.push(currentChunk);
+              currentChunk = chunk;
+          }
+          
+          if (currentChunk) optimized.push(currentChunk);
+          return optimized.filter(chunk => chunk.trim().length > 0);
+      }
+  }
+
+  const textChunker = new TextChunker();
+
   async function callLocalTtsApi(config, text, port = null, readingIndex = -1, sendResponseCallback = null, isFromChat = false) {
       isFromChat = isFromChat || (port && port.name === "chat");
       console.log("Bắt đầu gọi Local TTS", port ? "với port" : "không có port", "cho đoạn", readingIndex, isFromChat ? "(từ chat)" : "");
+      
       if (!text || text.trim() === "") {
           const errorMsg = "Văn bản trống, không thể chuyển đổi thành giọng nói";
           sendTTSResponse(port, false, null, errorMsg, readingIndex, sendResponseCallback);
           return;
       }
+
       const cacheKey = `local_${(config && config.languageCode) || 'vi-VN'}_${text}`;
       const cache = isFromChat ? ttsChatCache : ttsCache;
+      
+      // Kiểm tra cache trước
       if (cache.has(cacheKey)) {
+          console.log("Sử dụng cache cho Local TTS");
           sendTTSResponse(port, true, cache.get(cacheKey), null, readingIndex, sendResponseCallback);
           return;
       }
-      const url = 'http://127.0.0.1:5001/tts';
+
+      const url = 'http://127.0.0.1:8765/tts';
+      const languageCode = (config && config.languageCode) || 'vi-VN';
+
       try {
-          const response = await fetch(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  text: text,
-                  languageCode: (config && config.languageCode) || 'vi-VN'
-              })
-          });
-          if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`Lỗi Local TTS (${response.status}): ${errorText}`);
+          // Kiểm tra độ dài văn bản để quyết định có chia nhỏ hay không
+          const shouldChunk = text.length > 800; // Ngưỡng để chia nhỏ
+          
+          if (shouldChunk) {
+              console.log(`Văn bản dài (${text.length} ký tự), sử dụng chunking...`);
+              
+              // Chia văn bản thành các chunk
+              const chunks = textChunker.chunkText(text);
+              console.log(`Chia thành ${chunks.length} chunks:`, chunks.map(c => c.substring(0, 50) + '...'));
+              
+              // Gửi request với chunks
+              const response = await fetch(url, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      chunks: chunks,
+                      languageCode: languageCode,
+                      text: "" // Để trống text khi sử dụng chunks
+                  })
+              });
+              
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  throw new Error(`Lỗi Local TTS (${response.status}): ${errorText}`);
+              }
+              
+              const data = await response.json();
+              if (!data.success || !data.audioContent) {
+                  throw new Error(data.error || "Không nhận được dữ liệu audio từ Local TTS");
+              }
+              
+              console.log(`Xử lý thành công ${data.chunksProcessed || chunks.length} chunks`);
+              
+              // Lưu vào cache và gửi response
+              cache.set(cacheKey, data.audioContent);
+              if (cache.size > 50) {
+                  const oldestKey = cache.keys().next().value;
+                  cache.delete(oldestKey);
+              }
+              
+              sendTTSResponse(port, true, data.audioContent, null, readingIndex, sendResponseCallback);
+          } else {
+              // Xử lý đơn lẻ như cũ cho văn bản ngắn
+              console.log(`Văn bản ngắn (${text.length} ký tự), xử lý đơn lẻ...`);
+              
+              const response = await fetch(url, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      text: text,
+                      languageCode: languageCode
+                  })
+              });
+              
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  throw new Error(`Lỗi Local TTS (${response.status}): ${errorText}`);
+              }
+              
+              const data = await response.json();
+              if (!data.success || !data.audioContent) {
+                  throw new Error(data.error || "Không nhận được dữ liệu audio từ Local TTS");
+              }
+              
+              // Lưu vào cache và gửi response
+              cache.set(cacheKey, data.audioContent);
+              if (cache.size > 50) {
+                  const oldestKey = cache.keys().next().value;
+                  cache.delete(oldestKey);
+              }
+              
+              sendTTSResponse(port, true, data.audioContent, null, readingIndex, sendResponseCallback);
           }
-          const data = await response.json();
-          if (!data.success || !data.audioContent) {
-              throw new Error(data.error || "Không nhận được dữ liệu audio từ Local TTS");
-          }
-          cache.set(cacheKey, data.audioContent);
-          if (cache.size > 50) {
-              const oldestKey = cache.keys().next().value;
-              cache.delete(oldestKey);
-          }
-          sendTTSResponse(port, true, data.audioContent, null, readingIndex, sendResponseCallback);
       } catch (error) {
+          console.error("Lỗi Local TTS:", error);
           const errMsg = error.message && error.message.includes('Failed to fetch')
-              ? "Không thể kết nối máy chủ TTS cục bộ tại http://127.0.0.1:5001/tts. Vui lòng đảm bảo server đang chạy."
+              ? "Không thể kết nối máy chủ TTS cục bộ tại http://127.0.0.1:8765/tts. Vui lòng đảm bảo server đang chạy."
               : error.message;
           sendTTSResponse(port, false, null, errMsg, readingIndex, sendResponseCallback);
       }
@@ -394,6 +847,8 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
               console.log("Nhận tin nhắn từ", port.name, ":", request.type);
               if (request.type === "SUMMARIZE_REQUEST") {
                   callGeminiApi(request.apiKey, request.content, false, port);
+              } else if (request.type === 'SUMMARIZE_IMAGE_REQUEST') {
+                  callGeminiVisionApi(request.apiKey, request.image, port, request.additionalText || '');
               } else if (request.type === "TTS_REQUEST") {
                   console.log("Xử lý yêu cầu TTS từ", port.name);
                   if (request.config && request.config.engine === 'local') {
@@ -433,6 +888,20 @@ function sendTTSResponse(port, success, audioData, errorMsg = null, readingIndex
                   if (sendResponse) {
                       sendResponse({
                           type: "SUMMARY_RESULT",
+                          success: false,
+                          error: error.message
+                      });
+                  }
+              });
+          return true;
+      } else if (request.type === 'SUMMARIZE_IMAGE_REQUEST') {
+          callGeminiVisionApi(request.apiKey, request.image, null, request.additionalText || '')
+              .then(() => {})
+              .catch(error => {
+                  console.error('Lỗi khi gọi Gemini Vision API:', error);
+                  if (sendResponse) {
+                      sendResponse({
+                          type: 'SUMMARY_RESULT',
                           success: false,
                           error: error.message
                       });

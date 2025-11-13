@@ -5,6 +5,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const playPauseBtn = document.getElementById('playPauseBtn');
     const stopBtn = document.getElementById('stopBtn');
     const resultBox = document.getElementById('result-box');
+    const imageUpload = document.getElementById('imageUpload');
+    const imageContextText = document.getElementById('imageContextText');
+    const summarizeImageBtn = document.getElementById('summarizeImageBtn');
     
     // Gemini
     const apiKeyInput = document.getElementById('apiKey');
@@ -97,6 +100,12 @@ document.addEventListener('DOMContentLoaded', function () {
             resultBox.textContent = "Đã lấy nội dung. Sẵn sàng để tóm tắt.";
             summarizeBtn.disabled = false;
         } else if (request.type === "SUMMARY_RESULT") {
+            // Clear timeout warning nếu có
+            if (summarizeBtn.warningTimeout) {
+                clearTimeout(summarizeBtn.warningTimeout);
+                summarizeBtn.warningTimeout = null;
+            }
+            
             if (request.success) {
                 resultBox.textContent = request.summary;
             } else {
@@ -104,6 +113,10 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             summarizeBtn.textContent = 'Tóm tắt trang này';
             summarizeBtn.disabled = false;
+            if (summarizeImageBtn) {
+                summarizeImageBtn.textContent = 'Tóm tắt ảnh';
+                summarizeImageBtn.disabled = false;
+            }
         } else if (request.type === "TTS_RESULT") {
             if (request.success) {
                 playAudioFromBase64(request.audioData);
@@ -126,6 +139,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Lắng nghe tin nhắn từ background script
                 port.onMessage.addListener((message) => {
                     if (message.type === "SUMMARY_RESULT") {
+                        // Clear timeout warning nếu có
+                        if (summarizeBtn.warningTimeout) {
+                            clearTimeout(summarizeBtn.warningTimeout);
+                            summarizeBtn.warningTimeout = null;
+                        }
+                        
                         if (message.success) {
                             resultBox.textContent = message.summary;
                         } else {
@@ -174,8 +193,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 resultBox.textContent = "Chưa lấy được nội dung trang. Vui lòng thử lại.";
                 return;
             }
+            // Hiển thị loading với progress
             summarizeBtn.textContent = 'Đang xử lý...';
             summarizeBtn.disabled = true;
+            resultBox.textContent = '🔄 Đang gửi yêu cầu tóm tắt đến Gemini AI...\n⏱️ Thời gian dự kiến: 10-30 giây';
+            
+            // Thêm timeout warning sau 15 giây
+            const warningTimeout = setTimeout(() => {
+                if (summarizeBtn.disabled) {
+                    resultBox.textContent += '\n⚠️ Đang mất nhiều thời gian hơn dự kiến. Vui lòng đợi thêm...';
+                }
+            }, 15000);
+            
+            // Lưu timeout để có thể clear sau này
+            summarizeBtn.warningTimeout = warningTimeout;
             
             // Gửi tin nhắn qua kết nối
             port.postMessage({
@@ -185,6 +216,69 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
     });
+
+    function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    if (summarizeImageBtn) {
+        summarizeImageBtn.addEventListener('click', async function () {
+            if (!imageUpload || !imageUpload.files || imageUpload.files.length === 0) {
+                resultBox.textContent = 'Vui lòng chọn một ảnh.';
+                return;
+            }
+
+            const file = imageUpload.files[0];
+            const mime = file.type || 'image/png';
+
+            summarizeImageBtn.disabled = true;
+            summarizeImageBtn.textContent = 'Đang xử lý ảnh...';
+            resultBox.textContent = 'Đang gửi ảnh đến Gemini, vui lòng chờ...';
+
+            chrome.storage.sync.get(['geminiApiKey'], async function (result) {
+                const apiKey = result.geminiApiKey;
+                if (!apiKey) {
+                    resultBox.textContent = 'Vui lòng nhập và lưu Gemini API Key.';
+                    summarizeImageBtn.disabled = false;
+                    summarizeImageBtn.textContent = 'Tóm tắt ảnh';
+                    return;
+                }
+
+                try {
+                    const base64 = await readFileAsBase64(file);
+                    const activePort = ensureConnected();
+                    const additionalText = (imageContextText && imageContextText.value ? imageContextText.value.trim() : '');
+                    if (activePort) {
+                        activePort.postMessage({
+                            type: 'SUMMARIZE_IMAGE_REQUEST',
+                            apiKey: apiKey,
+                            image: { mime_type: mime, data: base64 },
+                            additionalText: additionalText
+                        });
+                    } else {
+                        chrome.runtime.sendMessage({
+                            type: 'SUMMARIZE_IMAGE_REQUEST',
+                            apiKey: apiKey,
+                            image: { mime_type: mime, data: base64 },
+                            additionalText: additionalText
+                        });
+                    }
+                } catch (e) {
+                    resultBox.textContent = 'Lỗi khi đọc ảnh: ' + e.message;
+                    summarizeImageBtn.disabled = false;
+                    summarizeImageBtn.textContent = 'Tóm tắt ảnh';
+                }
+            });
+        });
+    }
     
     // Sự kiện nhấn nút Chat
     chatBtn.addEventListener('click', function () {
