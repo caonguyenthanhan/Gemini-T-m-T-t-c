@@ -49,10 +49,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const stopBtn = document.getElementById('stopBtn');
     const ttsEngineSelect = document.getElementById('ttsEngine');
     const enableWebSearchCheckbox = document.getElementById('enableWebSearch');
+    const allowExternalKnowledgeCheckbox = document.getElementById('allowExternalKnowledge');
     
     let pageContent = "";
     let chatMode = "";
     let chatHistory = [];
+    let hasHistory = false;
     let currentTextToRead = ""; // Lưu nội dung đang được đọc
     let currentAiMessage = null; // Lưu tin nhắn AI đang được đọc
     
@@ -70,6 +72,40 @@ document.addEventListener('DOMContentLoaded', function () {
         retryCount: 0,        // Số lần thử lại kết nối
         maxRetries: 3         // Số lần thử lại tối đa
     };
+
+    function escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function renderMarkdown(md) {
+        let s = escapeHtml(md);
+        s = s.replace(/```([\s\S]*?)```/g, function(_, code) { return '<pre><code>' + code + '</code></pre>'; });
+        s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        s = s.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+        s = s.replace(/(?:^|\n)((?:\d+\.\s.*(?:\n|$))+)/gm, function(block) {
+            const items = block.trim().split(/\n/).filter(Boolean).map(function(l){return l.replace(/^\d+\.\s*/, '');}).map(function(it){return '<li>' + it + '</li>';}).join('');
+            return '<ol>' + items + '</ol>';
+        });
+        s = s.replace(/(?:^|\n)((?:[-\*]\s.*(?:\n|$))+)/gm, function(block) {
+            const items = block.trim().split(/\n/).filter(Boolean).map(function(l){return l.replace(/^[-\*]\s*/, '');}).map(function(it){return '<li>' + it + '</li>';}).join('');
+            return '<ul>' + items + '</ul>';
+        });
+        s = s.replace(/\n/g, '<br>');
+        return s;
+    }
+
+    function appendMessageText(el, text) {
+        let extra = el.querySelector('.message-extra');
+        if (!extra) {
+            extra = document.createElement('div');
+            extra.className = 'message-extra';
+            el.appendChild(extra);
+        }
+        const div = document.createElement('div');
+        div.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+        extra.appendChild(div);
+    }
     
     // Hàm để đảm bảo port kết nối luôn hoạt động với cơ chế thử lại
     function ensureConnected() {
@@ -138,12 +174,13 @@ document.addEventListener('DOMContentLoaded', function () {
     port = ensureConnected();
 
     // Tải lựa chọn công cụ TTS và cài đặt web search đã lưu
-    chrome.storage.sync.get(['ttsEngine', 'enableWebSearch'], function (result) {
+    chrome.storage.sync.get(['ttsEngine', 'enableWebSearch', 'allowExternalKnowledge'], function (result) {
         if (result.ttsEngine) {
             ttsEngineSelect.value = result.ttsEngine;
         }
         // Mặc định bật tính năng web search nếu chưa có cài đặt
         enableWebSearchCheckbox.checked = result.enableWebSearch !== false;
+        allowExternalKnowledgeCheckbox.checked = result.allowExternalKnowledge === true;
     });
 
     // Lưu lựa chọn công cụ TTS
@@ -155,6 +192,12 @@ document.addEventListener('DOMContentLoaded', function () {
     enableWebSearchCheckbox.addEventListener('change', function() {
         chrome.storage.sync.set({ enableWebSearch: this.checked }, function() {
             console.log('Đã lưu cài đặt tra cứu thông tin bổ sung:', enableWebSearchCheckbox.checked);
+        });
+    });
+
+    allowExternalKnowledgeCheckbox.addEventListener('change', function() {
+        chrome.storage.sync.set({ allowExternalKnowledge: this.checked }, function() {
+            console.log('Đã lưu cài đặt cho phép tri thức ngoài:', allowExternalKnowledgeCheckbox.checked);
         });
     });
     
@@ -186,6 +229,15 @@ document.addEventListener('DOMContentLoaded', function () {
         return true;
     });
     
+    // Khôi phục lịch sử chat theo phiên
+    chrome.storage.local.get(['chatHistory_chat'], function(res) {
+        if (Array.isArray(res.chatHistory_chat) && res.chatHistory_chat.length > 0) {
+            hasHistory = true;
+            chatHistory = res.chatHistory_chat;
+            chatHistory.forEach(function(msg){ addChatMessage(msg.content, msg.role); });
+        }
+    });
+
     // Tải nội dung từ storage
     chrome.storage.local.get(['fullPageContent', 'chatMode'], function(result) {
         if (result.fullPageContent) {
@@ -196,7 +248,9 @@ document.addEventListener('DOMContentLoaded', function () {
             summarizeContent(pageContent);
             
             // Thêm tin nhắn chào mừng
-            addChatMessage("Xin chào! Tôi là trợ lý AI. Bạn có thể hỏi tôi bất kỳ câu hỏi nào về nội dung trang web này.", 'ai');
+            if (!hasHistory) {
+                addChatMessage("Xin chào! Tôi là trợ lý AI. Bạn có thể hỏi tôi bất kỳ câu hỏi nào về nội dung trang web này.", 'ai');
+            }
         } else {
             contentSummary.textContent = "Không tìm thấy nội dung trang.";
             addChatMessage("Không tìm thấy nội dung trang. Vui lòng quay lại và thử lại.", 'ai');
@@ -314,7 +368,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!apiKey) {
                 console.error("Lỗi: Chưa cấu hình Google API Key");
                 if (currentAiMessage) {
-                    currentAiMessage.textContent += "\n\nLỗi: Chưa cấu hình Google API Key";
+                    appendMessageText(currentAiMessage, "\n\nLỗi: Chưa cấu hình Google API Key");
                 }
                 // Hiển thị thông báo lỗi
                 const errorMsg = {
@@ -343,7 +397,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 };
                 console.error(errorMsg.error);
                 if (currentAiMessage) {
-                    currentAiMessage.textContent += "\n\n" + "Google TTS API chưa được kích hoạt. Vui lòng truy cập Google Cloud Console để kích hoạt API.";
+                    appendMessageText(currentAiMessage, "\n\n" + "Google TTS API chưa được kích hoạt. Vui lòng truy cập Google Cloud Console để kích hoạt API.");
                 }
                 playAudioFromBase64(null, errorMsg);
                 resetPlayButton();
@@ -523,7 +577,7 @@ document.addEventListener('DOMContentLoaded', function () {
             ttsState.error = error.message;
             
             if (currentAiMessage) {
-                currentAiMessage.textContent += "\n\nLỗi khi gửi yêu cầu TTS: " + error.message;
+                appendMessageText(currentAiMessage, "\n\nLỗi khi gửi yêu cầu TTS: " + error.message);
             }
             resetPlayButton();
             // Cập nhật nút đọc của tin nhắn hiện tại nếu có
@@ -612,7 +666,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     ttsState.isProcessing = false;
                     
                     if (currentAiMessage) {
-                        currentAiMessage.textContent += '\n\nLỗi: Chưa cấu hình Google TTS API Key. Vui lòng cấu hình trong phần Cài đặt.';
+                        appendMessageText(currentAiMessage, '\n\nLỗi: Chưa cấu hình Google TTS API Key. Vui lòng cấu hình trong phần Cài đặt.');
                     }
                     return;
                 }
@@ -691,7 +745,7 @@ document.addEventListener('DOMContentLoaded', function () {
             
             // Hiển thị thông báo lỗi cho người dùng
             if (currentAiMessage) {
-                currentAiMessage.textContent += "\n\nLỗi khi tạm dừng/tiếp tục đọc: " + (error.message || "Không xác định");
+                appendMessageText(currentAiMessage, "\n\nLỗi khi tạm dừng/tiếp tục đọc: " + (error.message || "Không xác định"));
             }
             
             // Đặt lại nút đọc trong trường hợp lỗi
@@ -813,7 +867,7 @@ document.addEventListener('DOMContentLoaded', function () {
             resetPlayButton();
             if (currentAiMessage) {
                 updateCurrentMessageReadButton('▶️ Đọc');
-                currentAiMessage.textContent += '\n\nLỗi khi bắt đầu đọc bằng trình duyệt: ' + (error.message || 'Không xác định');
+                appendMessageText(currentAiMessage, '\n\nLỗi khi bắt đầu đọc bằng trình duyệt: ' + (error.message || 'Không xác định'));
             }
         }
     }
@@ -916,7 +970,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 ttsState.isPlaying = false;
                 
                 if (currentAiMessage) {
-                    currentAiMessage.textContent += '\n\nLỗi: Dữ liệu audio trống.';
+                    appendMessageText(currentAiMessage, '\n\nLỗi: Dữ liệu audio trống.');
                 }
                 resetPlayButton();
                 // Cập nhật nút đọc của tin nhắn hiện tại
@@ -982,7 +1036,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     ttsState.isPaused = false;
                     
                     if (currentAiMessage) {
-                        currentAiMessage.textContent += '\n\nLỗi giải mã audio: ' + (err.message || 'Không xác định');
+                        appendMessageText(currentAiMessage, '\n\nLỗi giải mã audio: ' + (err.message || 'Không xác định'));
                     }
                     resetPlayButton();
                     // Cập nhật nút đọc của tin nhắn hiện tại
@@ -997,7 +1051,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 ttsState.isPaused = false;
                 
                 if (currentAiMessage) {
-                    currentAiMessage.textContent += '\n\nLỗi giải mã dữ liệu: ' + (decodeError.message || 'Không xác định');
+                    appendMessageText(currentAiMessage, '\n\nLỗi giải mã dữ liệu: ' + (decodeError.message || 'Không xác định'));
                 }
                 resetPlayButton();
                 if (currentAiMessage) {
@@ -1012,7 +1066,7 @@ document.addEventListener('DOMContentLoaded', function () {
             ttsState.isPaused = false;
             
             if (currentAiMessage) {
-                currentAiMessage.textContent += '\n\nLỗi phát audio: ' + (error.message || 'Không xác định');
+                appendMessageText(currentAiMessage, '\n\nLỗi phát audio: ' + (error.message || 'Không xác định'));
             }
             resetPlayButton();
             // Cập nhật nút đọc của tin nhắn hiện tại
@@ -1153,6 +1207,7 @@ document.addEventListener('DOMContentLoaded', function () {
         
         // Thêm vào lịch sử chat
         chatHistory.push({role: 'user', content: userMessage});
+        chrome.storage.local.set({chatHistory_chat: chatHistory});
         
         // Lấy API key từ storage
         chrome.storage.sync.get(['geminiApiKey'], function(result) {
@@ -1167,7 +1222,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const loadingMsgElement = addChatMessage("Đang xử lý...", 'ai');
             
             // Gọi API để trả lời câu hỏi
-            callGeminiChatApi(result.geminiApiKey, userMessage, pageContent, chatHistory)
+            callGeminiChatApi(result.geminiApiKey, userMessage, pageContent, chatHistory, false, allowExternalKnowledgeCheckbox.checked)
                 .then(async response => {
                     // Xóa thông báo đang xử lý
                     loadingMsgElement.remove();
@@ -1178,16 +1233,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (needsAutoSearch) {
                         console.log("Phát hiện cần tự động tìm kiếm thông tin bổ sung");
                         
-                        // Hiển thị câu trả lời ban đầu
-                        addChatMessage(response, 'ai');
-                        chatHistory.push({role: 'assistant', content: response});
+                    // Hiển thị câu trả lời ban đầu
+                    addChatMessage(response, 'ai');
+                    chatHistory.push({role: 'assistant', content: response});
+                    chrome.storage.local.set({chatHistory_chat: chatHistory});
                         
                         // Hiển thị thông báo đang tìm kiếm
                         const searchingMsgElement = addChatMessage("🔍 Đang tìm kiếm thông tin bổ sung...", 'ai');
                         
                         try {
                             // Gọi lại API với tìm kiếm bổ sung
-                            const enhancedResponse = await callGeminiChatApi(result.geminiApiKey, userMessage, pageContent, chatHistory, true);
+                            const enhancedResponse = await callGeminiChatApi(result.geminiApiKey, userMessage, pageContent, chatHistory, true, allowExternalKnowledgeCheckbox.checked);
                             
                             // Xóa thông báo đang tìm kiếm
                             searchingMsgElement.remove();
@@ -1195,6 +1251,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             // Hiển thị câu trả lời được cải thiện
                             addChatMessage("📚 Thông tin bổ sung:\n\n" + enhancedResponse, 'ai');
                             chatHistory.push({role: 'assistant', content: enhancedResponse});
+                            chrome.storage.local.set({chatHistory_chat: chatHistory});
                         } catch (searchError) {
                             // Xóa thông báo đang tìm kiếm
                             searchingMsgElement.remove();
@@ -1205,6 +1262,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         // Hiển thị câu trả lời bình thường
                         addChatMessage(response, 'ai');
                         chatHistory.push({role: 'assistant', content: response});
+                        chrome.storage.local.set({chatHistory_chat: chatHistory});
                     }
                 })
                 .catch(error => {
@@ -1223,7 +1281,14 @@ document.addEventListener('DOMContentLoaded', function () {
     function addChatMessage(message, sender) {
         const messageElement = document.createElement('div');
         messageElement.className = `chat-message ${sender}-message`;
-        messageElement.textContent = message;
+        const contentEl = document.createElement('div');
+        contentEl.className = 'message-content';
+        if (sender === 'ai') {
+            contentEl.innerHTML = renderMarkdown(message);
+        } else {
+            contentEl.textContent = message;
+        }
+        messageElement.appendChild(contentEl);
         chatContainer.appendChild(messageElement);
         chatContainer.scrollTop = chatContainer.scrollHeight;
         
@@ -1334,7 +1399,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     
     // Hàm gọi Gemini API để chat với khả năng tự động tra cứu
-    async function callGeminiChatApi(apiKey, userQuestion, contextText, chatHistory, isRetryWithSearch = false) {
+    async function callGeminiChatApi(apiKey, userQuestion, contextText, chatHistory, isRetryWithSearch = false, allowExternalKnowledge = false) {
         //const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
         const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         
@@ -1362,7 +1427,10 @@ document.addEventListener('DOMContentLoaded', function () {
             contextPrompt += `\n\nThông tin bổ sung từ các nguồn khác:\n\n${additionalInfo}`;
         }
         
-        contextPrompt += `\n\nHãy trả lời câu hỏi của người dùng dựa trên nội dung trang web${additionalInfo ? ' và thông tin bổ sung' : ''}. Trả lời bằng tiếng Việt, ngắn gọn, dễ hiểu và chính xác. ${additionalInfo ? 'Nếu thông tin bổ sung hữu ích, hãy tích hợp nó một cách tự nhiên vào câu trả lời. ' : ''}Nếu câu hỏi không liên quan đến nội dung, hãy lịch sự đề nghị người dùng đặt câu hỏi liên quan đến nội dung trang web.`;
+        const instruction = allowExternalKnowledge
+            ? 'Bạn có thể sử dụng kiến thức chung ngoài nội dung trang khi cần, nhưng luôn ưu tiên thông tin từ nội dung trang.'
+            : 'Chỉ sử dụng thông tin có trong nội dung trang web; không dùng kiến thức ngoài. Nếu nội dung không đủ để trả lời, hãy nói rõ rằng chưa đủ thông tin.';
+        contextPrompt += `\n\nHãy trả lời câu hỏi của người dùng dựa trên nội dung trang web${additionalInfo ? ' và thông tin bổ sung' : ''}. Trả lời bằng tiếng Việt, ngắn gọn, dễ hiểu và chính xác. ${additionalInfo ? 'Nếu thông tin bổ sung hữu ích, hãy tích hợp nó một cách tự nhiên vào câu trả lời. ' : ''}${instruction}`;
         
         // Chuẩn bị nội dung cho API
         const contents = [

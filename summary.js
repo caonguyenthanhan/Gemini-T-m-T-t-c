@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
     const chatContainer = document.getElementById('chat-container');
+    const allowExternalKnowledgeCheckbox = document.getElementById('allowExternalKnowledge');
+    let chatHistory = [];
     
     let utterance = null;
     let audioContext = null;
@@ -56,15 +58,28 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Tải lựa chọn công cụ TTS đã lưu
-    chrome.storage.sync.get(['ttsEngine'], function (result) {
+    chrome.storage.sync.get(['ttsEngine', 'allowExternalKnowledge'], function (result) {
         if (result.ttsEngine) {
             ttsEngineSelect.value = result.ttsEngine;
         }
+        allowExternalKnowledgeCheckbox.checked = result.allowExternalKnowledge === true;
     });
 
     // Lưu lựa chọn công cụ TTS
     ttsEngineSelect.addEventListener('change', function() {
         chrome.storage.sync.set({ ttsEngine: this.value });
+    });
+
+    allowExternalKnowledgeCheckbox.addEventListener('change', function() {
+        chrome.storage.sync.set({ allowExternalKnowledge: this.checked });
+    });
+
+    // Khôi phục lịch sử chat theo phiên
+    chrome.storage.local.get(['chatHistory_summary'], function(res) {
+        if (Array.isArray(res.chatHistory_summary) && res.chatHistory_summary.length > 0) {
+            chatHistory = res.chatHistory_summary;
+            chatHistory.forEach(function(msg){ addChatMessage(msg.content, msg.role); });
+        }
     });
 
     // Tải kết quả tóm tắt và nội dung gốc từ storage
@@ -321,6 +336,10 @@ document.addEventListener('DOMContentLoaded', function () {
         addChatMessage(userMessage, 'user');
         chatInput.value = '';
         
+        // Thêm vào lịch sử chat và lưu
+        chatHistory.push({role: 'user', content: userMessage});
+        chrome.storage.local.set({chatHistory_summary: chatHistory});
+        
         // Lấy API key từ storage
         chrome.storage.sync.get(['geminiApiKey'], function(result) {
             if (!result.geminiApiKey) {
@@ -336,12 +355,14 @@ document.addEventListener('DOMContentLoaded', function () {
             const loadingMsgElement = addChatMessage("Đang xử lý...", 'ai');
             
             // Gọi API để trả lời câu hỏi
-            callGeminiChatApi(result.geminiApiKey, userMessage, contextText, summaryText)
+            callGeminiChatApi(result.geminiApiKey, userMessage, contextText, summaryText, allowExternalKnowledgeCheckbox.checked, chatHistory)
                 .then(response => {
                     // Xóa thông báo đang xử lý
                     loadingMsgElement.remove();
                     // Hiển thị câu trả lời
                     addChatMessage(response, 'ai');
+                    chatHistory.push({role: 'assistant', content: response});
+                    chrome.storage.local.set({chatHistory_summary: chatHistory});
                 })
                 .catch(error => {
                     // Xóa thông báo đang xử lý
@@ -356,15 +377,40 @@ document.addEventListener('DOMContentLoaded', function () {
     function addChatMessage(message, sender) {
         const messageElement = document.createElement('div');
         messageElement.className = `chat-message ${sender}-message`;
-        messageElement.textContent = message;
+        const contentEl = document.createElement('div');
+        contentEl.className = 'message-content';
+        if (sender === 'ai') {
+            contentEl.innerHTML = (function(md){
+                function e(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+                let t = e(md);
+                t = t.replace(/```([\s\S]*?)```/g, function(_,c){return '<pre><code>'+c+'</code></pre>';});
+                t = t.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
+                t = t.replace(/\*(.*?)\*/g,'<em>$1</em>');
+                t = t.replace(/`([^`]+)`/g,'<code>$1</code>');
+                t = t.replace(/(?:^|\n)((?:\d+\.\s.*(?:\n|$))+)/gm, function(b){
+                    const items=b.trim().split(/\n/).filter(Boolean).map(function(l){return l.replace(/^\d+\.\s*/, '');}).map(function(it){return '<li>'+it+'</li>';}).join('');
+                    return '<ol>'+items+'</ol>';
+                });
+                t = t.replace(/(?:^|\n)((?:[-\*]\s.*(?:\n|$))+)/gm, function(b){
+                    const items=b.trim().split(/\n/).filter(Boolean).map(function(l){return l.replace(/^[-\*]\s*/, '');}).map(function(it){return '<li>'+it+'</li>';}).join('');
+                    return '<ul>'+items+'</ul>';
+                });
+                t = t.replace(/\n/g,'<br>');
+                return t;
+            })(message);
+        } else {
+            contentEl.textContent = message;
+        }
+        messageElement.appendChild(contentEl);
         chatContainer.appendChild(messageElement);
         chatContainer.scrollTop = chatContainer.scrollHeight;
         return messageElement;
     }
     
     // Hàm gọi Gemini API để chat
-    async function callGeminiChatApi(apiKey, userQuestion, contextText, summaryText) {
-        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+    async function callGeminiChatApi(apiKey, userQuestion, contextText, summaryText, allowExternalKnowledge = false, chatHistory = []) {
+        // const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         
         // Tạo prompt với context và câu hỏi
         const prompt = `Bạn là trợ lý AI giúp người dùng hiểu sâu hơn về nội dung họ đang đọc. 
@@ -379,14 +425,22 @@ Dưới đây là nội dung gốc mà người dùng đang tìm hiểu:
 
 Người dùng hỏi: "${userQuestion}"
 
+${allowExternalKnowledge ? 'Bạn có thể sử dụng kiến thức chung ngoài nội dung được cung cấp khi cần, nhưng luôn ưu tiên thông tin từ nội dung gốc và bản tóm tắt.' : 'Chỉ sử dụng thông tin có trong nội dung gốc và bản tóm tắt; không dùng kiến thức ngoài. Nếu nội dung không đủ để trả lời, hãy nói rõ rằng chưa đủ thông tin.'}
+
 Hãy trả lời câu hỏi của người dùng dựa trên nội dung gốc và bản tóm tắt. Trả lời bằng tiếng Việt, ngắn gọn, dễ hiểu và chính xác. Nếu câu hỏi không liên quan đến nội dung, hãy lịch sự đề nghị người dùng đặt câu hỏi liên quan đến nội dung đang được tóm tắt.`;
         
+        const contents = [
+            { role: 'user', parts: [{ text: prompt }] }
+        ];
+        const recentHistory = chatHistory.slice(-10);
+        recentHistory.forEach(function(msg){ contents.push({ role: msg.role, parts: [{ text: msg.content }] }); });
+
         try {
             const response = await fetch(apiEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
+                    contents: contents,
                     safetySettings: [
                         { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
                         { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
