@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const ttsEngineSelect = document.getElementById('ttsEngine');
     const enableWebSearchCheckbox = document.getElementById('enableWebSearch');
     const allowExternalKnowledgeCheckbox = document.getElementById('allowExternalKnowledge');
+    const captureAreaBtn = document.getElementById('captureAreaBtn');
     
     let pageContent = "";
     let chatMode = "";
@@ -223,6 +224,23 @@ document.addEventListener('DOMContentLoaded', function () {
             // Gửi phản hồi để xác nhận đã nhận được tin nhắn
             if (sendResponse) {
                 sendResponse({received: true});
+            }
+        }
+        if (message.type === 'AREA_SELECTED') {
+            const rect = message.rect;
+            const windowId = sender && sender.tab && sender.tab.windowId ? sender.tab.windowId : undefined;
+            if (!rect) return;
+            captureAndSendSelectedArea(rect, windowId);
+            if (sendResponse) sendResponse({received: true});
+            return true;
+        }
+        if (message.type === 'SUMMARY_RESULT') {
+            if (message.success && message.summary) {
+                addChatMessage(message.summary, 'ai');
+                chatHistory.push({role: 'assistant', content: message.summary});
+                chrome.storage.local.set({chatHistory_chat: chatHistory});
+            } else if (!message.success && message.error) {
+                addChatMessage('Lỗi: ' + message.error, 'ai');
             }
         }
         // Trả về true để giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
@@ -1620,3 +1638,78 @@ document.addEventListener('DOMContentLoaded', function () {
         return formatted;
     }
 });
+    function startAreaSelection() {
+        chrome.tabs.query({active: true, lastFocusedWindow: true}, function(tabs) {
+            if (!tabs || !tabs[0]) return;
+            const tabId = tabs[0].id;
+            chrome.scripting.executeScript({
+                target: {tabId: tabId},
+                func: function() {
+                    const overlayId = 'gemini-capture-overlay';
+                    if (document.getElementById(overlayId)) return;
+                    const overlay = document.createElement('div');
+                    overlay.id = overlayId;
+                    overlay.style.position = 'fixed';
+                    overlay.style.top = '0';
+                    overlay.style.left = '0';
+                    overlay.style.width = '100%';
+                    overlay.style.height = '100%';
+                    overlay.style.zIndex = '2147483647';
+                    overlay.style.cursor = 'crosshair';
+                    overlay.style.background = 'rgba(0,0,0,0.05)';
+                    const rectEl = document.createElement('div');
+                    rectEl.style.position = 'fixed';
+                    rectEl.style.border = '2px solid #8e44ad';
+                    rectEl.style.background = 'rgba(142,68,173,0.15)';
+                    let startX = 0, startY = 0, dragging = false;
+                    overlay.addEventListener('mousedown', function(e){ dragging = true; startX = e.clientX; startY = e.clientY; rectEl.style.left = startX + 'px'; rectEl.style.top = startY + 'px'; rectEl.style.width = '0px'; rectEl.style.height = '0px'; if (!rectEl.parentNode) document.body.appendChild(rectEl); });
+                    overlay.addEventListener('mousemove', function(e){ if (!dragging) return; const x = Math.min(e.clientX, startX); const y = Math.min(e.clientY, startY); const w = Math.abs(e.clientX - startX); const h = Math.abs(e.clientY - startY); rectEl.style.left = x + 'px'; rectEl.style.top = y + 'px'; rectEl.style.width = w + 'px'; rectEl.style.height = h + 'px'; });
+                    function finish(e){ if (!dragging) return; dragging = false; const x = parseInt(rectEl.style.left); const y = parseInt(rectEl.style.top); const w = parseInt(rectEl.style.width); const h = parseInt(rectEl.style.height); if (overlay.parentNode) overlay.parentNode.removeChild(overlay); if (rectEl.parentNode) rectEl.parentNode.removeChild(rectEl); chrome.runtime.sendMessage({type:'AREA_SELECTED', rect:{x,y,width:w,height:h,dpr:window.devicePixelRatio}}); }
+                    overlay.addEventListener('mouseup', finish);
+                    overlay.addEventListener('mouseleave', function(e){ finish(e); });
+                    document.body.appendChild(overlay);
+                }
+            });
+        });
+    }
+
+    function dataUrlToInlineData(dataUrl) {
+        const parts = dataUrl.split(',');
+        const header = parts[0];
+        const base64 = parts[1];
+        const mimeMatch = header.match(/^data:(.*?);base64$/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+        return { mime_type: mime, data: base64 };
+    }
+
+    function captureAndSendSelectedArea(rect, windowId) {
+        addChatMessage('Đang chụp vùng màn hình...', 'ai');
+        chrome.tabs.captureVisibleTab(windowId, {format: 'png'}, function(dataUrl){
+            if (!dataUrl) { addChatMessage('Lỗi: Không thể chụp màn hình.', 'ai'); return; }
+            const img = new Image();
+            img.onload = function(){
+                const scale = rect.dpr || 1;
+                const sx = Math.round(rect.x * scale);
+                const sy = Math.round(rect.y * scale);
+                const sw = Math.round(rect.width * scale);
+                const sh = Math.round(rect.height * scale);
+                const canvas = document.createElement('canvas');
+                canvas.width = sw; canvas.height = sh;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+                const croppedDataUrl = canvas.toDataURL('image/png');
+                chrome.storage.sync.get(['geminiApiKey'], function(res){
+                    const apiKey = res.geminiApiKey;
+                    if (!apiKey) { addChatMessage('Vui lòng nhập Gemini API Key trong popup của tiện ích.', 'ai'); return; }
+                    const inlineData = dataUrlToInlineData(croppedDataUrl);
+                    const additionalText = chatInput.value.trim();
+                    chrome.runtime.sendMessage({ type: 'VISION_REQUEST', apiKey: apiKey, inlineData: inlineData, additionalText: additionalText });
+                });
+            };
+            img.src = dataUrl;
+        });
+    }
+
+    if (captureAreaBtn) {
+        captureAreaBtn.addEventListener('click', function(){ startAreaSelection(); });
+    }

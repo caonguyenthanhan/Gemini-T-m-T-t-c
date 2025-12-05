@@ -1,9 +1,11 @@
-// Import thư viện crypto-js đầy đủ
-try {
-    importScripts('crypto-js.min.js');
-  } catch (e) {
-    console.error(e);
+function bytesToBase64(bytes) {
+  const chunkSize = 32768;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
   }
+  return btoa(binary);
+}
   
   // Tạo context menu khi extension được cài đặt
   chrome.runtime.onInstalled.addListener(() => {
@@ -26,6 +28,12 @@ try {
       id: "summarizeImage",
       title: "Tóm tắt ảnh này",
       contexts: ["image"]
+    });
+
+    chrome.contextMenus.create({
+      id: "captureAreaChat",
+      title: "Chụp vùng màn hình và chat",
+      contexts: ["page"]
     });
 
     // Menu gửi văn bản + ảnh đến Gemini (tự động dùng thứ có sẵn)
@@ -143,6 +151,35 @@ try {
         const url = chrome.runtime.getURL('read.html');
         chrome.windows.create({ url, type: 'popup', width: 520, height: 700, focused: true });
       });
+    } else if (info.menuItemId === "captureAreaChat") {
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: function() {
+          const id = 'gemini-capture-overlay';
+          if (document.getElementById(id)) return;
+          const overlay = document.createElement('div');
+          overlay.id = id;
+          overlay.style.position = 'fixed';
+          overlay.style.top = '0';
+          overlay.style.left = '0';
+          overlay.style.width = '100%';
+          overlay.style.height = '100%';
+          overlay.style.zIndex = '2147483647';
+          overlay.style.cursor = 'crosshair';
+          overlay.style.background = 'rgba(0,0,0,0.05)';
+          const rectEl = document.createElement('div');
+          rectEl.style.position = 'fixed';
+          rectEl.style.border = '2px solid #8e44ad';
+          rectEl.style.background = 'rgba(142,68,173,0.15)';
+          let startX = 0, startY = 0, dragging = false;
+          overlay.addEventListener('mousedown', function(e){ dragging = true; startX = e.clientX; startY = e.clientY; rectEl.style.left = startX + 'px'; rectEl.style.top = startY + 'px'; rectEl.style.width = '0px'; rectEl.style.height = '0px'; if (!rectEl.parentNode) document.body.appendChild(rectEl); });
+          overlay.addEventListener('mousemove', function(e){ if (!dragging) return; const x = Math.min(e.clientX, startX); const y = Math.min(e.clientY, startY); const w = Math.abs(e.clientX - startX); const h = Math.abs(e.clientY - startY); rectEl.style.left = x + 'px'; rectEl.style.top = y + 'px'; rectEl.style.width = w + 'px'; rectEl.style.height = h + 'px'; });
+          function finish(){ if (!dragging) return; dragging = false; const x = parseInt(rectEl.style.left); const y = parseInt(rectEl.style.top); const w = parseInt(rectEl.style.width); const h = parseInt(rectEl.style.height); if (overlay.parentNode) overlay.parentNode.removeChild(overlay); if (rectEl.parentNode) rectEl.parentNode.removeChild(rectEl); chrome.runtime.sendMessage({ type: 'CAPTURE_AREA', rect: { x, y, width: w, height: h, dpr: window.devicePixelRatio } }); }
+          overlay.addEventListener('mouseup', finish);
+          overlay.addEventListener('mouseleave', finish);
+          document.body.appendChild(overlay);
+        }
+      });
     }
   });
   
@@ -161,9 +198,31 @@ try {
           // Không trả về true, không giữ kênh tin nhắn mở
           return false;
       } else if (request.type === "WEB_SEARCH_REQUEST") {
-          // Xử lý yêu cầu tìm kiếm web
-          handleWebSearchRequest(request, sendResponse);
-          return true; // Giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
+        // Xử lý yêu cầu tìm kiếm web
+        handleWebSearchRequest(request, sendResponse);
+        return true; // Giữ kênh tin nhắn mở cho phản hồi bất đồng bộ
+      } else if (request.type === 'VISION_REQUEST') {
+        const apiKey = request.apiKey;
+        const inlineData = request.inlineData;
+        const additionalText = request.additionalText || '';
+        callGeminiVisionApi(apiKey, inlineData, null, additionalText, false)
+            .catch(error => console.error('Lỗi gọi Vision API:', error));
+        return false;
+      } else if (request.type === 'CAPTURE_AREA') {
+        const rect = request.rect;
+        const windowId = sender && sender.tab && sender.tab.windowId ? sender.tab.windowId : undefined;
+        chrome.tabs.captureVisibleTab(windowId, { format: 'png' }, function(dataUrl) {
+          if (!dataUrl) return;
+          chrome.storage.local.set({ capturedScreenshot: dataUrl, capturedRect: rect, chatMode: 'visionCapture' }, function() {
+            chrome.windows.create({
+              url: chrome.runtime.getURL('summary.html'),
+              type: 'popup',
+              width: 520,
+              height: 600
+            });
+          });
+        });
+        return false;
       }
   });
   
@@ -393,8 +452,7 @@ try {
       const mime = mimeHeader || mimeGuess || 'image/jpeg';
       const buffer = await response.arrayBuffer();
       const bytes = new Uint8Array(buffer);
-      const wordArray = CryptoJS.lib.WordArray.create(bytes);
-      const base64 = CryptoJS.enc.Base64.stringify(wordArray);
+      const base64 = bytesToBase64(bytes);
       return { mime_type: mime, data: base64 };
   }
 

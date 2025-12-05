@@ -26,42 +26,62 @@
   </style>
 </head>
 <body>
-  <h1>Kết quả tóm tắt</h1>
-  
-  <div id="summary-content">Đang tải kết quả tóm tắt...</div>
-  
-  <div id="controls">
-    <label for="ttsEngine">Chọn giọng đọc:</label>
-    <select id="ttsEngine">
-      <option value="browser">Giọng đọc của trình duyệt</option>
-      <option value="google">Giọng đọc Google Cloud</option>
-      <option value="local">Giọng đọc cục bộ (Local)</option>
-    </select>
-    <button id="playPauseBtn">▶️ Đọc</button>
-    <button id="stopBtn">⏹️ Dừng</button>
-  </div>
-
-  <div id="chat-section">
-    <h2>Hỏi thêm về nội dung</h2>
-    <p>Bạn có thể đặt câu hỏi để tìm hiểu sâu hơn về nội dung đã tóm tắt.</p>
-    <div style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border-radius: 4px; border: 1px solid #e0e0e0;">
-      <label style="display: flex; align-items: center; cursor: pointer; font-size: 14px;">
-        <input type="checkbox" id="allowExternalKnowledge" style="margin-right: 8px;">
-        <span>📚 Cho phép dùng tri thức ngoài</span>
-      </label>
-      <div style="font-size: 12px; color: #666; margin-top: 4px; margin-left: 20px;">
-        Nếu bật, AI có thể sử dụng kiến thức chung ngoài nội dung được chọn
+  <div id="layout">
+    <div id="history-panel">
+      <div id="history-header">
+        <span>Lịch sử tóm tắt</span>
+        <button id="toggle-history">Thu gọn</button>
+      </div>
+      <div id="history-list"></div>
+    </div>
+    <div id="workspace">
+      <h1>Kết quả tóm tắt</h1>
+      <div id="screenshot-area">
+        <img id="screenshot-image" alt="Ảnh chụp" style="max-width:100%; display:none;" />
+      </div>
+      <div id="summary-content">Đang tải kết quả tóm tắt...</div>
+      <div id="tools">
+        <input type="text" id="summary-prompt" placeholder="Nhập ghi chú/từ khóa cho tóm tắt..." style="width:60%; padding:8px;" />
+        <button id="summarize-btn">Tóm tắt</button>
+        <button id="new-session-btn">Phiên mới</button>
+      </div>
+      <div id="controls">
+        <label for="ttsEngine">Chọn giọng đọc:</label>
+        <select id="ttsEngine">
+          <option value="browser">Giọng đọc của trình duyệt</option>
+          <option value="google">Giọng đọc Google Cloud</option>
+          <option value="local">Giọng đọc cục bộ (Local)</option>
+        </select>
+        <button id="playPauseBtn">▶️ Đọc</button>
+        <button id="stopBtn">⏹️ Dừng</button>
+      </div>
+      <div id="chat-section">
+        <h2>Hỏi thêm về nội dung</h2>
+        <div style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border-radius: 4px; border: 1px solid #e0e0e0;">
+          <label style="display: flex; align-items: center; cursor: pointer; font-size: 14px;">
+            <input type="checkbox" id="allowExternalKnowledge" style="margin-right: 8px;">
+            <span>📚 Cho phép dùng tri thức ngoài</span>
+          </label>
+          <div style="font-size: 12px; color: #666; margin-top: 4px; margin-left: 20px;">
+            Nếu bật, AI có thể sử dụng kiến thức chung ngoài nội dung được chọn
+          </div>
+        </div>
+        <div id="chat-container"></div>
+        <div id="chat-input-container">
+          <input type="text" id="chat-input" placeholder="Nhập câu hỏi của bạn...">
+          <button id="send-btn">Gửi</button>
+        </div>
       </div>
     </div>
-    
-    <div id="chat-container"></div>
-    
-    <div id="chat-input-container">
-      <input type="text" id="chat-input" placeholder="Nhập câu hỏi của bạn...">
-      <button id="send-btn">Gửi</button>
-    </div>
   </div>
 
+  <script>
+    (function(){
+      var s = document.createElement('style');
+      s.textContent = '#layout{display:flex;gap:12px}#history-panel{flex:0 0 30%;border:1px solid #eee;border-radius:6px;overflow:hidden;display:flex;flex-direction:column}#history-header{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#f7f7f7;border-bottom:1px solid #eee}#history-list{overflow-y:auto;max-height:calc(100vh - 180px)}.history-item{padding:10px;border-bottom:1px solid #eee} .history-title{font-weight:600;font-size:14px;margin-bottom:6px} .history-preview{font-size:13px;color:#555;margin-bottom:8px} .history-actions{display:flex;gap:8px}#workspace{flex:1}#tools{margin:10px 0;display:flex;gap:8px;align-items:center}#chat-section{margin-top:20px;border-top:1px solid #eee;padding-top:10px} @media(max-width:900px){#layout{flex-direction:column}#history-panel{flex:0 0 auto;max-height:240px}}';
+      document.head.appendChild(s);
+    })();
+  </script>
   <script src="summary.js"></script>
 </body>
 </html>
