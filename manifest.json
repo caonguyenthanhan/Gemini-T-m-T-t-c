@@ -10,6 +10,29 @@
     "storage",
     "contextMenus"
   ],
+  "commands": {
+    "summarize_page": {
+      "suggested_key": {
+        "default": "Alt+S",
+        "mac": "Alt+S"
+      },
+      "description": "Tóm tắt trang hiện tại"
+    },
+    "toggle_chat": {
+      "suggested_key": {
+        "default": "Alt+C",
+        "mac": "Alt+C"
+      },
+      "description": "Đóng/Mở Chat Sidebar"
+    },
+    "capture_area": {
+      "suggested_key": {
+        "default": "Alt+Q",
+        "mac": "Alt+Q"
+      },
+      "description": "Chụp vùng màn hình"
+    }
+  },
   "host_permissions": [
     "<all_urls>",
     "https://generativelanguage.googleapis.com/",
@@ -34,7 +57,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["summary.html", "summary.js", "chat.html", "chat.js"],
+      "resources": ["chat.html", "chat.js"],
       "matches": ["<all_urls>"]
     }
   ]

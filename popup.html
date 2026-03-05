@@ -54,6 +54,33 @@
     /* Toggle Switch */
     .switch-group { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
     .switch-label { font-size: 13px; color: #444; }
+
+    /* Dark Mode */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-color: #1e1e1e;
+        --text-color: #eee;
+        --border-color: #444;
+      }
+      body { background-color: var(--bg-color); color: var(--text-color); }
+      .tabs { background: #2d2d2d; border-bottom-color: #444; }
+      .tab-btn { color: #aaa; }
+      .tab-btn:hover { background-color: #3e3e3e; }
+      
+      h2 { color: #ccc; border-bottom-color: #444; }
+      
+      .btn-outline { border-color: #555; color: #aaa; }
+      .btn-outline:hover { background-color: #333; }
+      
+      input[type="text"], input[type="password"], textarea, select { background: #333; color: #eee; border-color: #555; }
+      
+      #result-box { background: #252526; border-color: #444; color: #eee !important; }
+      
+      .footer { border-top-color: #444; color: #777; }
+      .switch-label { color: #ccc; }
+      
+      .key-remove { color: #777; }
+    }
   </style>
 </head>
 <body>
@@ -103,6 +130,20 @@
       Bạn là ai? (Ví dụ: "Học sinh cấp 3", "Chuyên gia lập trình", "Bà nội trợ"). AI sẽ tóm tắt phù hợp với bạn.
     </div>
     <input type="text" id="userPersona" placeholder="Nhập vai trò của bạn (VD: Sinh viên IT)...">
+    <div style="margin-top: 10px; margin-bottom: 5px; font-size: 12px; color: #666;">
+        Ngôn ngữ đầu ra (AI sẽ trả lời bằng ngôn ngữ này):
+    </div>
+    <select id="outputLanguage">
+        <option value="Vietnamese">Tiếng Việt (Vietnamese)</option>
+        <option value="English">Tiếng Anh (English)</option>
+        <option value="Japanese">Tiếng Nhật (Japanese)</option>
+        <option value="Korean">Tiếng Hàn (Korean)</option>
+        <option value="Chinese">Tiếng Trung (Chinese)</option>
+        <option value="French">Tiếng Pháp (French)</option>
+        <option value="German">Tiếng Đức (German)</option>
+        <option value="Russian">Tiếng Nga (Russian)</option>
+        <option value="Spanish">Tiếng Tây Ban Nha (Spanish)</option>
+    </select>
     <textarea id="systemPrompt" placeholder="Prompt hệ thống tùy chỉnh (nếu cần)..."></textarea>
     <button id="savePersonaBtn" class="btn btn-primary">Lưu Cá Nhân Hóa</button>
 

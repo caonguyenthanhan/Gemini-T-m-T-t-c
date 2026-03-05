@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const addKeyBtn = document.getElementById('addKeyBtn');
     const saveKeysBtn = document.getElementById('saveKeysBtn');
     const userPersonaInput = document.getElementById('userPersona');
+    const outputLanguageSelect = document.getElementById('outputLanguage');
     const systemPromptInput = document.getElementById('systemPrompt');
     const savePersonaBtn = document.getElementById('savePersonaBtn');
     const enableWebSearchCheckbox = document.getElementById('enableWebSearch');
@@ -36,6 +37,49 @@ document.addEventListener('DOMContentLoaded', function () {
     loadSettings();
     injectContentScript();
     ensureConnected();
+    restorePopupState();
+
+    // --- STATE RESTORATION ---
+    function restorePopupState() {
+        chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+             const tabId = tabs[0] ? tabs[0].id : null;
+             if (!tabId) return;
+             
+             const storageKey = `popup_state_${tabId}`;
+             chrome.storage.local.get([storageKey], (res) => {
+                 const state = res[storageKey];
+                 if (state) {
+                     if (state.result) {
+                         resultBox.textContent = state.result;
+                         resultBox.style.color = '#333';
+                         summarizeBtn.textContent = '📝 Tóm tắt trang này';
+                         summarizeBtn.disabled = false;
+                     }
+                     if (state.isLoading) {
+                         summarizeBtn.disabled = true;
+                         summarizeBtn.textContent = '⏳ Đang xử lý...';
+                         showStatus(state.status || '🔄 Đang xử lý...', 'info');
+                     }
+                 }
+             });
+        });
+    }
+
+    function savePopupState(isLoading, status, result) {
+        chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+             const tabId = tabs[0] ? tabs[0].id : null;
+             if (!tabId) return;
+             
+             const storageKey = `popup_state_${tabId}`;
+             const data = {
+                 isLoading: isLoading
+             };
+             if (status) data.status = status;
+             if (result) data.result = result;
+             
+             chrome.storage.local.set({ [storageKey]: data });
+        });
+    }
 
     // --- TAB LOGIC ---
     function initTabs() {
@@ -68,8 +112,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (keys.length === 0) keys = ['']; // Empty slot
             renderKeyInputs(keys);
 
-            // 2. Persona & Prompt
+            // 2. Persona & Prompt & Language
             if (res.userPersona) userPersonaInput.value = res.userPersona;
+            if (res.outputLanguage) outputLanguageSelect.value = res.outputLanguage;
             if (res.systemPrompt) systemPromptInput.value = res.systemPrompt;
 
             // 3. Web Search
@@ -145,6 +190,7 @@ document.addEventListener('DOMContentLoaded', function () {
     savePersonaBtn.addEventListener('click', () => {
         chrome.storage.sync.set({
             userPersona: userPersonaInput.value.trim(),
+            outputLanguage: outputLanguageSelect.value,
             systemPrompt: systemPromptInput.value.trim()
         }, () => {
             showStatus('Đã lưu thông tin cá nhân hóa!', 'success');
@@ -212,8 +258,11 @@ document.addEventListener('DOMContentLoaded', function () {
             if (request.success) {
                 resultBox.style.color = '#333';
                 resultBox.textContent = request.summary;
+                // Save result state
+                savePopupState(false, null, request.summary);
             } else {
                 showStatus(`Lỗi: ${request.error}`, 'error');
+                savePopupState(false, `Lỗi: ${request.error}`, null);
             }
         } else if (request.type === "TTS_RESULT") {
             if (request.success) {
@@ -245,20 +294,30 @@ document.addEventListener('DOMContentLoaded', function () {
 
             summarizeBtn.disabled = true;
             summarizeBtn.textContent = '⏳ Đang xử lý...';
-            showStatus('🔄 Đang gửi yêu cầu đến Gemini AI...\n(Sẽ tự động thử các key khác nếu lỗi)', 'info');
+            const statusMsg = '🔄 Đang gửi yêu cầu đến Gemini AI...\n(Sẽ tự động thử các key khác nếu lỗi)';
+            showStatus(statusMsg, 'info');
+
+            // Save loading state
+            savePopupState(true, statusMsg, null);
 
             // Send request with all info
             const port = ensureConnected();
-            const msg = {
-                type: "SUMMARIZE_REQUEST",
-                apiKeys: keys, // Send array
-                content: fullPageContent,
-                persona: result.userPersona,
-                systemPrompt: result.systemPrompt
-            };
-            
-            if (port) port.postMessage(msg);
-            else chrome.runtime.sendMessage(msg);
+            // Get tabId to include in request
+            chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+                const tabId = tabs[0] ? tabs[0].id : null;
+                const msg = {
+                    type: "SUMMARIZE_REQUEST",
+                    apiKeys: keys, // Send array
+                    content: fullPageContent,
+                    persona: result.userPersona,
+                    outputLanguage: result.outputLanguage || 'Vietnamese',
+                    systemPrompt: result.systemPrompt,
+                    tabId: tabId
+                };
+                
+                if (port) port.postMessage(msg);
+                else chrome.runtime.sendMessage(msg);
+            });
         });
     });
 
@@ -288,7 +347,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     currentTabTitle: currentTabTitle,
                     chatMode: 'fullPage'
                 }, function() {
-                    openSidebarOrPopup();
+                    toggleSidebarOrPopup();
                 });
             });
         });
@@ -298,25 +357,40 @@ document.addEventListener('DOMContentLoaded', function () {
     captureBtn.addEventListener('click', () => {
         // Close popup and open chat with capture mode
         chrome.storage.local.set({ chatMode: 'capture_init' }, function() {
-             openSidebarOrPopup();
+             toggleSidebarOrPopup();
              window.close(); // Close popup to allow selection
         });
     });
 
-    function openSidebarOrPopup() {
+    function toggleSidebarOrPopup() {
         if (chrome.sidePanel && chrome.sidePanel.open) {
             chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
                 if (!tabs[0]) return;
                 const tabId = tabs[0].id;
                 // Side Panel API
-                chrome.sidePanel.open({ tabId }).catch(() => openInPageSidebar());
+                // Side panel toggle is tricky. chrome.sidePanel.open opens it.
+                // To toggle, we might need to check if it's open.
+                // But chrome.sidePanel API doesn't expose isOpen.
+                // However, we can use the behavior: if we call open, it opens.
+                // The user asked "BẤM 1 LẦN MỞ, ĐANG MỞ BẤM LẦN NỮA SẼ ĐÓNG".
+                // Since we can't easily detect if side panel is open for this specific tab via API (without complex state),
+                // we can rely on the In-Page Sidebar fallback which is easier to toggle.
+                // For native Side Panel, Chrome handles the toggle via the toolbar icon usually.
+                // But from popup button... 
+                // Let's try to use the in-page sidebar for better control if the user prefers that experience, 
+                // OR we accept that "Chat" button just opens it.
+                // BUT, if we use the In-Page Sidebar logic (iframe), we CAN toggle it.
+                
+                // Let's implement toggle for the In-Page Sidebar.
+                // For native SidePanel, we just open it.
+                chrome.sidePanel.open({ tabId }).catch(() => toggleInPageSidebar());
             });
         } else {
-            openInPageSidebar();
+            toggleInPageSidebar();
         }
     }
 
-    function openInPageSidebar() {
+    function toggleInPageSidebar() {
         chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
             if (!tabs[0]) return;
             const tabId = tabs[0].id;
@@ -324,9 +398,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 target: { tabId },
                 func: function (chatUrl) {
                     const SIDEBAR_ID = 'gemini-chat-sidebar';
-                    const EXISTING = document.getElementById(SIDEBAR_ID);
-                    if (EXISTING) {
-                        EXISTING.style.display = 'block';
+                    const existing = document.getElementById(SIDEBAR_ID);
+                    if (existing) {
+                        // Toggle logic
+                        if (existing.style.display === 'none') {
+                            existing.style.display = 'block';
+                            document.body.style.marginRight = '400px';
+                        } else {
+                            existing.style.display = 'none';
+                            document.body.style.marginRight = '0px';
+                        }
                         return;
                     }
                     
@@ -354,7 +435,19 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     const closeBtn = document.createElement('button');
                     closeBtn.textContent = '✕';
-                    closeBtn.style.border = 'none'; closeBtn.style.background = 'none'; closeBtn.style.cursor = 'pointer'; closeBtn.style.fontSize = '16px';
+                    // Fix close button style
+                    closeBtn.style.border = 'none'; 
+                    closeBtn.style.background = 'transparent'; 
+                    closeBtn.style.cursor = 'pointer'; 
+                    closeBtn.style.fontSize = '18px';
+                    closeBtn.style.fontWeight = 'bold';
+                    closeBtn.style.color = '#555';
+                    closeBtn.style.padding = '5px 10px';
+                    closeBtn.style.borderRadius = '4px';
+                    
+                    closeBtn.onmouseover = () => { closeBtn.style.backgroundColor = '#e0e0e0'; closeBtn.style.color = '#000'; };
+                    closeBtn.onmouseout = () => { closeBtn.style.backgroundColor = 'transparent'; closeBtn.style.color = '#555'; };
+                    
                     closeBtn.onclick = () => {
                         container.style.display = 'none';
                         document.body.style.marginRight = '0px'; // Restore
@@ -363,7 +456,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     const iframe = document.createElement('iframe');
                     iframe.src = chatUrl;
-                    iframe.style.flex = '1'; iframe.style.border = 'none'; width: '100%';
+                    iframe.style.flex = '1'; iframe.style.border = 'none'; iframe.style.width = '100%'; iframe.style.height = '100%';
 
                     container.appendChild(header);
                     container.appendChild(iframe);

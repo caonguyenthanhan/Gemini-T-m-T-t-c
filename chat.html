@@ -65,8 +65,44 @@
     .summary-content.open { display: block; }
 
     /* Settings/Options overlay */
-    .options-bar { padding: 8px 15px; background: #f8f9fa; border-bottom: 1px solid #eee; font-size: 12px; color: #666; display: flex; gap: 15px; }
-    .option-item { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .options-bar { padding: 8px 15px; background: #f8f9fa; border-bottom: 1px solid #eee; font-size: 12px; color: #666; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .option-item { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+    
+    .tts-controls { display: flex; gap: 8px; align-items: center; border-left: 1px solid #ddd; padding-left: 8px; margin-left: 5px; }
+    .tts-select { padding: 2px; border: 1px solid #ddd; border-radius: 3px; font-size: 11px; max-width: 100px; }
+    .tts-slider { width: 60px; vertical-align: middle; }
+
+    /* Dark Mode */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-color: #1e1e1e;
+        --chat-bg: #2d2d2d;
+        --user-msg-bg: #2b3a4e; /* Darker blue */
+        --ai-msg-bg: #333;
+        --border-color: #444;
+        --text-color: #eee;
+      }
+      body { color: var(--text-color); }
+      .header, .input-area, .summary-section, .options-bar { background: #252526; border-color: var(--border-color); color: #eee; }
+      .header h1 { color: #eee; }
+      .header-controls button { background: #333; border-color: #555; color: #ccc; }
+      .header-controls button:hover { background: #444; color: #fff; }
+      
+      .message-content { color: #eee; }
+      .user-message .message-content { background-color: #1a2a3a; color: #8ab4f8; } /* Adjusted for readability */
+      .ai-message .message-content { background-color: #333; color: #eee; border-color: #444; }
+      
+      .summary-header { background: #2d2d2d; color: #ccc; }
+      .summary-content { border-top-color: #444; color: #ddd; }
+      
+      #chat-input { background: #333; color: #eee; border-color: #555; }
+      .tool-btn { color: #aaa; }
+      .tool-btn:hover { background-color: #3e3e3e; color: #fff; }
+      
+      .options-bar { background: #2d2d2d; border-bottom-color: #444; color: #aaa; }
+      .tts-controls { border-left-color: #555; }
+      .tts-select { background: #333; color: #eee; border-color: #555; }
+    }
   </style>
 </head>
 <body>
@@ -75,6 +111,8 @@
     <div class="header-controls">
       <button id="exportTxtBtn" title="Lưu thành file TXT">📄 TXT</button>
       <button id="exportDocxBtn" title="Lưu thành file Word">📝 Word</button>
+      <button id="exportMdBtn" title="Lưu thành Markdown">⬇️ MD</button>
+      <button id="exportJsonBtn" title="Lưu thành JSON">{} JSON</button>
       <button id="clearHistoryBtn" title="Xóa lịch sử chat">🗑️ Xóa</button>
     </div>
   </div>
@@ -96,11 +134,14 @@
     <label class="option-item">
       <input type="checkbox" id="allowExternalKnowledge"> 📚 External Info
     </label>
-    <select id="ttsEngine" style="padding: 2px; border: 1px solid #ddd; border-radius: 3px; font-size: 11px;">
-      <option value="browser">TTS: Browser</option>
-      <option value="google">TTS: Google</option>
-      <option value="local">TTS: Local</option>
-    </select>
+    
+    <div class="tts-controls">
+        <span title="Tốc độ đọc">⚡</span>
+        <input type="range" id="ttsSpeed" class="tts-slider" min="0.5" max="2" step="0.1" value="1.0" title="Tốc độ: 1.0x">
+        <select id="ttsVoice" class="tts-select">
+            <option value="">Giọng mặc định</option>
+        </select>
+    </div>
   </div>
 
   <div id="chat-container"></div>
@@ -108,6 +149,9 @@
   <div class="input-area">
     <div class="toolbar">
       <button class="tool-btn" id="captureAreaBtn">📸 Chụp vùng</button>
+      <button class="tool-btn" id="mindmapBtn" title="Tạo sơ đồ tư duy">🧠 Mindmap</button>
+      <button class="tool-btn" id="uploadBtn" title="Tải file PDF/TXT để tóm tắt">📂 Upload</button>
+      <input type="file" id="fileInput" accept=".txt,.pdf,.md" style="display: none;">
       <button class="tool-btn" id="playPauseBtn">▶️ Đọc toàn bộ</button>
       <button class="tool-btn" id="stopBtn" style="color: #EA4335;">⏹️ Dừng đọc</button>
     </div>

@@ -12,10 +12,9 @@ function bytesToBase64(bytes) {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({ id: "summarizePage", title: "Tóm tắt trang này", contexts: ["page"] });
   chrome.contextMenus.create({ id: "summarizeSelection", title: "Tóm tắt văn bản đã chọn", contexts: ["selection"] });
-  chrome.contextMenus.create({ id: "summarizeImage", title: "Tóm tắt ảnh này", contexts: ["image"] });
+  chrome.contextMenus.create({ id: "explainSelection", title: "🔍 Giải thích từ/đoạn này", contexts: ["selection"] });
+  chrome.contextMenus.create({ id: "translateSelection", title: "🌐 Dịch sang Tiếng Việt", contexts: ["selection"] });
   chrome.contextMenus.create({ id: "captureAreaChat", title: "Chụp vùng màn hình và chat", contexts: ["page"] });
-  chrome.contextMenus.create({ id: "summarizeMixed", title: "Gửi văn bản/ảnh đến Gemini", contexts: ["selection", "image"] });
-  chrome.contextMenus.create({ id: "readSelection", title: "Đọc phần đã chọn", contexts: ["selection"] });
 });
 
 // Xử lý sự kiện context menu
@@ -24,15 +23,30 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['Readability.js', 'content.js'] })
       .then(() => chrome.action.openPopup());
   } 
-  else if (info.menuItemId === "summarizeSelection" && info.selectionText) {
+  else if (["summarizeSelection", "explainSelection", "translateSelection"].includes(info.menuItemId) && info.selectionText) {
     chrome.storage.sync.get(['geminiApiKey', 'geminiApiKeys'], function(result) {
       const keys = result.geminiApiKeys || (result.geminiApiKey ? [result.geminiApiKey] : []);
       if (keys.length > 0) {
-        chrome.storage.sync.set({ selectedText: info.selectionText, originalContent: info.selectionText, chatMode: 'selection' }, function() {
-          callGeminiApiWithRotation(keys, info.selectionText, true);
-          chrome.action.setBadgeText({ text: "...", tabId: tab.id });
-          chrome.action.setBadgeBackgroundColor({ color: "#4285F4", tabId: tab.id });
-          setTimeout(() => chrome.action.setBadgeText({ text: "", tabId: tab.id }), 3000);
+        let mode = 'selection_processing';
+        if (info.menuItemId === 'explainSelection') mode = 'explain_processing';
+        if (info.menuItemId === 'translateSelection') mode = 'translate_processing';
+
+        // Save to Tab-Specific State
+        const key = `sidebar_state_${tab.id}`;
+        chrome.storage.local.set({ 
+            [key]: {
+                selectedText: info.selectionText, 
+                chatMode: mode 
+            }
+        }, function() {
+          // Open Sidebar directly, let chat.js handle the prompt
+          if (chrome.sidePanel && chrome.sidePanel.open) {
+              chrome.sidePanel.open({ tabId: tab.id }).catch(err => {
+                  chrome.tabs.sendMessage(tab.id, { type: "OPEN_SIDEBAR", url: chrome.runtime.getURL('chat.html') });
+              });
+          } else {
+              chrome.tabs.sendMessage(tab.id, { type: "OPEN_SIDEBAR", url: chrome.runtime.getURL('chat.html') });
+          }
         });
       } else {
         alert("Vui lòng nhập Gemini API Key trong popup.");
@@ -97,6 +111,9 @@ function injectCaptureOverlay(tabId) {
 
 // --- HISTORY CLEANUP ---
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  // Clear Popup state
+  chrome.storage.local.remove(`popup_state_${tabId}`);
+  
   // We can't get URL after tab is removed, but we can't easily map ID to URL hash without storing map.
   // Alternative: Iterate all keys and remove those associated with this tab if we stored tabId in key.
   // But we stored hash(URL).
@@ -129,15 +146,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.persona || request.systemPrompt) {
         prompt = `[System: ${request.systemPrompt || ''}]\n[Persona: ${request.persona || ''}]\n\n${request.content}`;
     }
+    if (request.outputLanguage) {
+        prompt = `Hãy trả lời bằng ngôn ngữ: ${request.outputLanguage}. \n\n${prompt}`;
+    }
     
-    callGeminiApiWithRotation(request.apiKeys || [request.apiKey], prompt)
+    // Notify Popup that process started (redundant if popup handles it, but safe)
+    if (request.tabId) {
+        const key = `popup_state_${request.tabId}`;
+        chrome.storage.local.set({ [key]: { isLoading: true, status: "Đang xử lý..." } });
+    }
+
+    callGeminiApiWithRotation(request.apiKeys || [request.apiKey], prompt, false, null, request.tabId)
       .then(summary => {
-        if (sender.tab) {
-            // Send back to the specific tab/port
-        }
+          // Handled in callGeminiApiSingle
       })
-      .catch(err => console.error(err));
-      // We handle response via port in the connect listener usually
+      .catch(err => {
+          console.error(err);
+          if (request.tabId) {
+              const key = `popup_state_${request.tabId}`;
+              chrome.storage.local.set({ [key]: { isLoading: false, status: "Lỗi", result: null, error: err.message } });
+          }
+      });
       return false; 
   }
   else if (request.type === "START_CAPTURE_AREA") {
@@ -151,10 +180,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const windowId = sender.tab ? sender.tab.windowId : undefined;
     chrome.tabs.captureVisibleTab(windowId, { format: 'png' }, function(dataUrl) {
       if (!dataUrl) return;
-      // Crop logic... (Simplified for brevity, assuming similar to before or passing to summary.html)
-      // Save to local for summary.html to pick up
-      chrome.storage.local.set({ capturedScreenshot: dataUrl, capturedRect: rect, chatMode: 'visionCapture' }, function() {
-        chrome.windows.create({ url: chrome.runtime.getURL('summary.html'), type: 'popup', width: 600, height: 700 });
+      // Save to local and Open Sidebar
+      chrome.storage.local.set({ 
+          capturedScreenshot: dataUrl, 
+          capturedRect: rect, 
+          chatMode: 'vision_capture_ready' 
+      }, function() {
+          // Open Sidebar
+          const tabId = sender.tab.id;
+          if (chrome.sidePanel && chrome.sidePanel.open) {
+              chrome.sidePanel.open({ tabId }).catch(err => {
+                  chrome.tabs.sendMessage(tabId, { type: "OPEN_SIDEBAR", url: chrome.runtime.getURL('chat.html') });
+              });
+          } else {
+              chrome.tabs.sendMessage(tabId, { type: "OPEN_SIDEBAR", url: chrome.runtime.getURL('chat.html') });
+          }
       });
     });
     return false;
@@ -174,6 +214,7 @@ chrome.runtime.onConnect.addListener((port) => {
       if (msg.type === "SUMMARIZE_REQUEST") {
         let prompt = msg.content;
         if (msg.persona) prompt = `Tóm tắt cho người dùng là ${msg.persona}. ${prompt}`;
+        if (msg.outputLanguage) prompt = `Hãy trả lời bằng ngôn ngữ: ${msg.outputLanguage}. \n\n${prompt}`;
         callGeminiApiWithRotation(msg.apiKeys || [msg.apiKey], prompt, false, port);
       }
     });
@@ -181,14 +222,14 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 // --- API FUNCTIONS ---
-async function callGeminiApiWithRotation(apiKeys, prompt, fromContextMenu = false, port = null) {
+async function callGeminiApiWithRotation(apiKeys, prompt, fromContextMenu = false, port = null, tabId = null) {
   let lastError = null;
   const keys = Array.isArray(apiKeys) ? apiKeys : [apiKeys];
   
   for (const key of keys) {
     if (!key) continue;
     try {
-      return await callGeminiApiSingle(key, prompt, fromContextMenu, port);
+      return await callGeminiApiSingle(key, prompt, fromContextMenu, port, tabId);
     } catch (e) {
       console.warn("Key failed:", e);
       lastError = e;
@@ -197,11 +238,19 @@ async function callGeminiApiWithRotation(apiKeys, prompt, fromContextMenu = fals
   
   // All failed
   const errorMsg = "Tất cả API Key đều lỗi: " + (lastError ? lastError.message : "Unknown");
-  if (port) port.postMessage({ type: "SUMMARY_RESULT", success: false, error: errorMsg });
-  else chrome.runtime.sendMessage({ type: "SUMMARY_RESULT", success: false, error: errorMsg });
+  
+  if (tabId) {
+      const key = `popup_state_${tabId}`;
+      chrome.storage.local.set({ [key]: { isLoading: false, status: "Lỗi", result: null, error: errorMsg } });
+  }
+
+  try {
+      if (port) port.postMessage({ type: "SUMMARY_RESULT", success: false, error: errorMsg });
+      else chrome.runtime.sendMessage({ type: "SUMMARY_RESULT", success: false, error: errorMsg });
+  } catch (e) { console.log("Port disconnected", e); }
 }
 
-async function callGeminiApiSingle(apiKey, prompt, fromContextMenu, port) {
+async function callGeminiApiSingle(apiKey, prompt, fromContextMenu, port, tabId = null) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const response = await fetch(url, {
     method: 'POST',
@@ -216,17 +265,102 @@ async function callGeminiApiSingle(apiKey, prompt, fromContextMenu, port) {
   
   const summary = data.candidates[0].content.parts[0].text;
   
+  // Save result for Popup persistence
+  if (tabId) {
+      const key = `popup_state_${tabId}`;
+      chrome.storage.local.set({ [key]: { isLoading: false, status: "Hoàn tất", result: summary } });
+  }
+
+  // Nếu được gọi từ context menu, lưu kết quả và gửi thông báo mở Sidebar
   if (fromContextMenu) {
-      chrome.storage.sync.set({ contextMenuSummary: summary }, () => {
-          chrome.windows.create({ url: chrome.runtime.getURL('summary.html'), type: 'popup', width: 800, height: 600 });
+      // Clear badge
+      chrome.action.setBadgeText({ text: "", tabId: undefined }); // tabId unknown here without port
+      
+      // Save result
+      const key = `sidebar_state_${sender.tab ? sender.tab.id : (tabId || 'unknown')}`;
+      chrome.storage.local.set({ 
+          [key]: {
+              summaryFromContextMenu: summary.trim(),
+              chatMode: 'summary_display'
+          }
+      }, function() {
+          // Open Sidebar
+          chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+              if (tabs[0]) {
+                  const id = tabs[0].id;
+                  if (chrome.sidePanel && chrome.sidePanel.open) {
+                      chrome.sidePanel.open({ tabId: id }).catch(err => {
+                          chrome.tabs.sendMessage(id, { type: "OPEN_SIDEBAR", url: chrome.runtime.getURL('chat.html') });
+                      });
+                  } else {
+                      chrome.tabs.sendMessage(id, { type: "OPEN_SIDEBAR", url: chrome.runtime.getURL('chat.html') });
+                  }
+              }
+          });
       });
   } else {
       const msg = { type: "SUMMARY_RESULT", success: true, summary: summary };
-      if (port) port.postMessage(msg);
-      else chrome.runtime.sendMessage(msg);
+      try {
+          if (port) port.postMessage(msg);
+          else chrome.runtime.sendMessage(msg);
+      } catch (e) { console.log("Port disconnected", e); }
   }
   return summary;
 }
+
+// --- SHORTCUTS & SPA SUPPORT ---
+chrome.commands.onCommand.addListener((command) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+        if (!tabs[0]) return;
+        const tabId = tabs[0].id;
+
+        if (command === "toggle_chat") {
+            if (chrome.sidePanel && chrome.sidePanel.open) {
+                 // Try to open sidepanel
+                 chrome.sidePanel.open({ tabId }).catch(() => {
+                     chrome.tabs.sendMessage(tabId, { type: "OPEN_SIDEBAR", url: chrome.runtime.getURL('chat.html') });
+                 });
+            } else {
+                 chrome.tabs.sendMessage(tabId, { type: "OPEN_SIDEBAR", url: chrome.runtime.getURL('chat.html') });
+            }
+        } else if (command === "summarize_page") {
+            // Open sidebar and trigger summarize
+            // We need to inject content script first if not present
+            chrome.scripting.executeScript({ target: { tabId }, files: ['Readability.js', 'content.js'] })
+                .then(() => {
+                    // Open Sidebar
+                    if (chrome.sidePanel && chrome.sidePanel.open) {
+                        chrome.sidePanel.open({ tabId });
+                    } else {
+                        chrome.tabs.sendMessage(tabId, { type: "OPEN_SIDEBAR", url: chrome.runtime.getURL('chat.html') });
+                    }
+                    // We rely on chat.js to auto-summarize if content is ready?
+                    // Actually, chat.js checks storage.
+                    // So we should wait for content script to return result?
+                    // content.js sends 'CONTENT_RESULT' to runtime.
+                    // But if chat.js is not open, who listens? Popup listens.
+                    // Background doesn't listen for CONTENT_RESULT to save it?
+                    // Let's make background save content result if received?
+                    // Currently popup.js saves it.
+                    // We should move saving logic to background for robustness.
+                });
+        } else if (command === "capture_area") {
+            injectCaptureOverlay(tabId);
+        }
+    });
+});
+
+// SPA URL Change Detection
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url) {
+        // URL changed (SPA navigation)
+        // Notify chat.js to reload context
+        chrome.runtime.sendMessage({ type: "SPA_URL_CHANGED", url: changeInfo.url, title: tab.title });
+        
+        // Optionally re-inject content script if needed?
+        // Or just let chat.js handle it.
+    }
+});
 
 // ... (Keep existing Web Search & TTS functions)
 async function handleWebSearchRequest(request, sendResponse) {

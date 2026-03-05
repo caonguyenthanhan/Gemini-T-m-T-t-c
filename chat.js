@@ -10,13 +10,20 @@ document.addEventListener('DOMContentLoaded', function () {
     // Controls
     const exportTxtBtn = document.getElementById('exportTxtBtn');
     const exportDocxBtn = document.getElementById('exportDocxBtn');
+    const exportMdBtn = document.getElementById('exportMdBtn');
+    const exportJsonBtn = document.getElementById('exportJsonBtn');
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
     const captureAreaBtn = document.getElementById('captureAreaBtn');
+    const mindmapBtn = document.getElementById('mindmapBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const fileInput = document.getElementById('fileInput');
     
     // Settings
     const enableWebSearchCheckbox = document.getElementById('enableWebSearch');
     const allowExternalKnowledgeCheckbox = document.getElementById('allowExternalKnowledge');
-    const ttsEngineSelect = document.getElementById('ttsEngine');
+    const ttsEngineSelect = document.getElementById('ttsEngine'); // Keeping for legacy, though we moved it
+    const ttsSpeedInput = document.getElementById('ttsSpeed');
+    const ttsVoiceSelect = document.getElementById('ttsVoice');
     
     // TTS
     const playPauseBtn = document.getElementById('playPauseBtn');
@@ -30,21 +37,32 @@ document.addEventListener('DOMContentLoaded', function () {
     let apiKeys = [];
     let userPersona = "";
     let systemPrompt = "";
+    let outputLanguage = "Vietnamese";
     
     // TTS State
-    let ttsState = { isPlaying: false, isPaused: false, utterance: null, audioContext: null, audioSource: null };
+    let ttsState = { isPlaying: false, isPaused: false, utterance: null };
+    let availableVoices = [];
 
     // --- INITIALIZATION ---
-    loadSettingsAndContent();
     setupEventListeners();
+    setupSPAListener();
+    loadVoices();
+    loadSettingsAndContent();
 
+    // Listen for tab activation to reload context
+    chrome.tabs.onActivated.addListener(async (activeInfo) => {
+        // When user switches tab, reload content for that tab
+        loadSettingsAndContent();
+    });
+    
     // --- LOAD DATA ---
     function loadSettingsAndContent() {
         // Load Settings
-        chrome.storage.sync.get(['geminiApiKeys', 'geminiApiKey', 'userPersona', 'systemPrompt', 'enableWebSearch', 'ttsEngine'], (res) => {
+        chrome.storage.sync.get(['geminiApiKeys', 'geminiApiKey', 'userPersona', 'systemPrompt', 'outputLanguage', 'enableWebSearch', 'ttsEngine'], (res) => {
             apiKeys = res.geminiApiKeys || (res.geminiApiKey ? [res.geminiApiKey] : []);
             userPersona = res.userPersona || "";
             systemPrompt = res.systemPrompt || "";
+            outputLanguage = res.outputLanguage || "Vietnamese";
             if (res.enableWebSearch !== undefined) enableWebSearchCheckbox.checked = res.enableWebSearch;
             if (res.ttsEngine) ttsEngineSelect.value = res.ttsEngine;
             
@@ -53,38 +71,159 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
 
-        // Load Content & History
-        chrome.storage.local.get(['fullPageContent', 'currentTabUrl', 'currentTabTitle'], (res) => {
-            if (res.fullPageContent) {
-                pageContent = res.fullPageContent;
-                currentTabUrl = res.currentTabUrl || "";
-                currentTabTitle = res.currentTabTitle || "Trang Web";
+        // Identify current tab
+        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+            if (!tabs[0]) return;
+            const tabId = tabs[0].id;
+            const currentUrl = tabs[0].url; // Local var first
+            
+            // 1. Load Tab-Specific Context Menu State
+            const sidebarKey = `sidebar_state_${tabId}`;
+            chrome.storage.local.get([sidebarKey, 'fullPageContent', 'currentTabUrl', 'currentTabTitle'], (res) => {
+                const sidebarState = res[sidebarKey];
                 
-                // Summarize immediately
-                if (apiKeys.length > 0) summarizeContent();
+                // Update global vars
+                // Note: fullPageContent might still be global if we didn't refactor content.js saving.
+                // But let's check if we have better persistence.
+                // ideally content.js should save to `content_${tabId}`.
+                // For now, we rely on sidebarState for 'actions' and global for 'page content' (which updates on switch).
+                // Actually, if we switch tabs, 'fullPageContent' in storage might be from previous tab if content script didn't run yet.
+                // But content script runs on load.
                 
-                // Load specific history
-                loadHistory();
-            } else {
-                contentSummary.textContent = "Không tìm thấy nội dung trang.";
-                addSystemMessage("⚠️ Không tìm thấy nội dung. Vui lòng tải lại trang và thử lại.");
-            }
+                // Let's rely on sidebarState if available for immediate actions.
+                if (sidebarState) {
+                    if (sidebarState.chatMode === 'vision_capture_ready' && sidebarState.capturedScreenshot) {
+                         handleVisionState(sidebarState, tabId);
+                    } else if (sidebarState.chatMode === 'summary_display' && sidebarState.summaryFromContextMenu) {
+                         contentSummary.textContent = sidebarState.summaryFromContextMenu;
+                         contentSummary.classList.add('open');
+                         summaryIcon.textContent = '▲';
+                         // Persistence: We don't remove it here, so it stays.
+                         // But if we switch tabs, we load other state.
+                    } else if (['selection_processing', 'explain_processing', 'translate_processing'].includes(sidebarState.chatMode)) {
+                         handleSelectionState(sidebarState, tabId);
+                    }
+                }
+                
+                // 2. Load General Content
+                // We should use `currentTabUrl` from the TAB, not storage, to key history.
+                window.currentTabUrl = currentUrl;
+                window.currentTabTitle = tabs[0].title;
+                
+                // Load History for this URL
+                loadHistory(); 
+                
+                // Check if we have content
+                if (res.fullPageContent && res.currentTabUrl === currentUrl) {
+                    pageContent = res.fullPageContent;
+                } else {
+                    // Try to get content?
+                }
+            });
         });
     }
 
-    function getHistoryKey() {
-        // Create a safe key from URL
-        // Simple hash or encoding. Using encodeURIComponent might be too long.
-        // Let's use a simple hash function for brevity, or just btoa but truncate if too long.
-        // Chrome storage keys are strings. 
-        if (!currentTabUrl) return 'chatHistory_default';
-        let hash = 0;
-        for (let i = 0; i < currentTabUrl.length; i++) {
-            const char = currentTabUrl.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32bit integer
+    function handleVisionState(state, tabId) {
+        // Only add if not already in history (simplified check)
+        // Ideally we check if last message is this image?
+        // But for now, we just show it.
+        addMessageToUI('ai', 'Đã chụp màn hình! Bạn muốn hỏi gì về hình ảnh này?');
+        const imgDiv = document.createElement('div');
+        imgDiv.className = 'chat-message ai-message';
+        imgDiv.innerHTML = `<div class="message-content"><img src="${state.capturedScreenshot}" style="max-width: 100%; border-radius: 8px;"></div>`;
+        chatContainer.appendChild(imgDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        window.pendingImage = state.capturedScreenshot;
+        
+        // Consume mode to avoid re-adding on reload?
+        // Actually, if user switches tabs and back, we might re-add it.
+        // We should check if we already handled it.
+        // Or remove from storage.
+        chrome.storage.local.remove(`sidebar_state_${tabId}`);
+    }
+    
+    function handleSelectionState(state, tabId) {
+         if (state.chatMode === 'selection_processing') {
+            contentSummary.textContent = "Đang tóm tắt đoạn văn bản đã chọn...";
+            contentSummary.classList.add('open');
+            summarizeSelection(state.selectedText);
+         } else if (state.chatMode === 'explain_processing') {
+            const userMsg = `Giải thích: "${state.selectedText}"`;
+            const prompt = `Giải thích chi tiết ý nghĩa của đoạn văn/từ ngữ sau trong ngữ cảnh bài viết: "${state.selectedText}". Trả lời bằng ngôn ngữ: ${outputLanguage}.`;
+            processContextAction(userMsg, prompt);
+         } else if (state.chatMode === 'translate_processing') {
+            const userMsg = `Dịch: "${state.selectedText}"`;
+            const prompt = `Dịch đoạn văn sau sang Tiếng Việt (hoặc ngôn ngữ đích là ${outputLanguage} nếu được yêu cầu): "${state.selectedText}"`;
+            processContextAction(userMsg, prompt);
+         }
+         // Consume mode
+         chrome.storage.local.remove(`sidebar_state_${tabId}`);
+    }
+    
+    // ... (Old loadSettingsAndContent removed/replaced)
+
+    async function processContextAction(userMsg, prompt) {
+        addMessageToUI('user', userMsg);
+        chatHistory.push({ role: 'user', content: userMsg });
+        
+        // Show Loading
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'chat-message ai-message';
+        loadingDiv.innerHTML = '<div class="message-content">⏳ Đang xử lý...</div>';
+        chatContainer.appendChild(loadingDiv);
+        
+        try {
+            if (userPersona) prompt += `\nPhong cách: ${userPersona}`;
+            const response = await callGeminiWithRotation(prompt);
+            
+            loadingDiv.remove();
+            addMessageToUI('ai', response);
+            chatHistory.push({ role: 'model', content: response });
+            saveHistory();
+        } catch (error) {
+            loadingDiv.remove();
+            addMessageToUI('ai', `Lỗi: ${error.message}`);
         }
-        return 'chatHistory_' + Math.abs(hash);
+    }
+
+    async function summarizeSelection(text) {
+        contentSummary.textContent = "Đang tóm tắt đoạn văn bản...";
+        try {
+            let prompt = `Tóm tắt đoạn văn bản sau một cách ngắn gọn (khoảng 2-3 câu). Trả lời bằng ngôn ngữ: ${outputLanguage}. \n\n"${text}"`;
+            if (userPersona) prompt += `\nPhong cách: ${userPersona}`;
+            
+            const summary = await callGeminiWithRotation(prompt);
+            contentSummary.textContent = summary;
+            
+            // Add to chat history as a Q&A
+            addMessageToUI('user', `Tóm tắt đoạn: "${text.substring(0, 50)}..."`);
+            addMessageToUI('ai', summary);
+            chatHistory.push({ role: 'user', content: `Tóm tắt đoạn: "${text}"` });
+            chatHistory.push({ role: 'model', content: summary });
+            saveHistory();
+            
+        } catch (error) {
+            contentSummary.textContent = `Lỗi tóm tắt: ${error.message}`;
+        }
+    }
+
+    function getHistoryHash(url) {
+        if (!url) return 'default';
+        let hash = 0;
+        for (let i = 0; i < url.length; i++) {
+            const char = url.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return Math.abs(hash);
+    }
+
+    function getHistoryKey() {
+        return 'chatHistory_' + getHistoryHash(currentTabUrl);
+    }
+    
+    function getSummaryKey() {
+        return 'summary_' + getHistoryHash(currentTabUrl);
     }
 
     function loadHistory() {
@@ -137,6 +276,9 @@ document.addEventListener('DOMContentLoaded', function () {
         // Exports
         exportTxtBtn.addEventListener('click', () => exportChat('txt'));
         exportDocxBtn.addEventListener('click', () => exportChat('doc'));
+        if(exportMdBtn) exportMdBtn.addEventListener('click', () => exportChat('md'));
+        if(exportJsonBtn) exportJsonBtn.addEventListener('click', () => exportChat('json'));
+        
         clearHistoryBtn.addEventListener('click', () => {
             if (confirm("Xóa toàn bộ lịch sử chat của trang này?")) {
                 chatHistory = [];
@@ -149,6 +291,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Capture
         captureAreaBtn.addEventListener('click', startCapture);
+        
+        // Mindmap
+        if(mindmapBtn) mindmapBtn.addEventListener('click', generateMindmap);
+        
+        // Upload File
+        if(uploadBtn && fileInput) {
+            uploadBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', handleFileUpload);
+        }
 
         // TTS Controls
         playPauseBtn.addEventListener('click', () => toggleTTS(contentSummary.textContent));
@@ -203,8 +354,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- CORE LOGIC ---
 
-    async function sendMessage() {
-        const text = chatInput.value.trim();
+    async function sendMessage(text = null) { // Updated signature
+        if (!text) text = chatInput.value.trim();
         if (!text) return;
         
         if (apiKeys.length === 0) {
@@ -232,6 +383,7 @@ document.addEventListener('DOMContentLoaded', function () {
             let prompt = `Bạn là trợ lý AI hữu ích. `;
             if (userPersona) prompt += `Người dùng là: ${userPersona}. Hãy trả lời phù hợp với vai trò này. `;
             if (systemPrompt) prompt += `${systemPrompt}. `;
+            prompt += `Hãy trả lời bằng ngôn ngữ: ${outputLanguage}. `;
             
             prompt += `Dựa vào nội dung trang web dưới đây:\n\n"""${pageContent.substring(0, 30000)}"""\n\n`; // Limit content size
             
@@ -249,7 +401,14 @@ document.addEventListener('DOMContentLoaded', function () {
             prompt += `\nLịch sử chat:\n${historyPrompt}\n\nUser: ${text}\nModel:`;
 
             // Call API with Rotation
-            const response = await callGeminiWithRotation(prompt);
+            let response;
+            if (window.pendingImage) {
+                // Vision Request
+                response = await callGeminiVisionWithRotation(prompt, window.pendingImage);
+                window.pendingImage = null; // Clear after use
+            } else {
+                response = await callGeminiWithRotation(prompt);
+            }
             
             // Remove Loading
             loadingDiv.remove();
@@ -268,15 +427,100 @@ document.addEventListener('DOMContentLoaded', function () {
     async function summarizeContent() {
         contentSummary.textContent = "Đang tóm tắt...";
         try {
-            let prompt = "Tóm tắt nội dung trang web này một cách ngắn gọn, súc tích (khoảng 3-5 câu). ";
+            let prompt = `Tóm tắt nội dung trang web này một cách ngắn gọn, súc tích (khoảng 3-5 câu). `;
+            prompt += `Hãy làm nổi bật (bôi đậm bằng Markdown) các từ khóa quan trọng. `;
+            prompt += `Sau khi tóm tắt, hãy đề xuất 3 câu hỏi ngắn gọn mà người dùng có thể muốn hỏi tiếp, định dạng theo JSON: {"summary": "...", "questions": ["Q1", "Q2", "Q3"]}. `;
+            prompt += `Trả lời bằng ngôn ngữ: ${outputLanguage}. `;
+            
             if (userPersona) prompt += `Phong cách tóm tắt phù hợp cho: ${userPersona}.`;
             prompt += `\n\nNội dung:\n"""${pageContent.substring(0, 20000)}"""`; // Limit for summary
 
-            const summary = await callGeminiWithRotation(prompt);
-            contentSummary.textContent = summary;
+            const rawResponse = await callGeminiWithRotation(prompt);
+            
+            // Parse JSON if possible, else fallback
+            let summaryText = rawResponse;
+            let questions = [];
+            
+            try {
+                // Try to extract JSON block
+                const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const data = JSON.parse(jsonMatch[0]);
+                    summaryText = data.summary;
+                    questions = data.questions || [];
+                }
+            } catch (e) {
+                console.warn("Could not parse summary JSON", e);
+            }
+
+            contentSummary.innerHTML = renderMarkdown(summaryText);
+            
+            // Render suggestions
+            if (questions.length > 0) {
+                const suggestionDiv = document.createElement('div');
+                suggestionDiv.style.marginTop = '10px';
+                suggestionDiv.style.display = 'flex';
+                suggestionDiv.style.flexWrap = 'wrap';
+                suggestionDiv.style.gap = '5px';
+                
+                questions.forEach(q => {
+                    const btn = document.createElement('button');
+                    btn.textContent = q;
+                    btn.className = 'tool-btn'; // reuse class
+                    btn.style.border = '1px solid #ddd';
+                    btn.style.fontSize = '12px';
+                    btn.onclick = () => sendMessage(q);
+                    suggestionDiv.appendChild(btn);
+                });
+                contentSummary.appendChild(suggestionDiv);
+            }
+            
+            // Save Summary
+            const key = getSummaryKey();
+            const data = {};
+            // We save raw HTML/Text or structured? 
+            // Saving raw text loses buttons.
+            // Let's save the HTML content of summary div? Or simpler: save text and questions separately.
+            // For simplicity/compatibility, just save the text summary for now. 
+            // Or better: store object.
+            data[key] = summaryText; // Just text for now to avoid complexity with persistence of buttons
+            chrome.storage.local.set(data);
         } catch (error) {
             contentSummary.textContent = `Không thể tóm tắt: ${error.message}`;
         }
+    }
+
+    async function callGeminiVisionWithRotation(prompt, base64Image) {
+        // Strip prefix if present
+        const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|webp);base64,/, "");
+        
+        let lastError = null;
+        for (const key of apiKeys) {
+            if (!key) continue;
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: prompt },
+                                { inline_data: { mime_type: "image/png", data: cleanBase64 } }
+                            ]
+                        }]
+                    })
+                });
+                
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error?.message || response.statusText);
+                return data.candidates[0].content.parts[0].text;
+            } catch (error) {
+                console.warn(`Key ...${key.slice(-4)} failed:`, error);
+                lastError = error;
+            }
+        }
+        throw new Error("Vision API failed: " + (lastError ? lastError.message : "Unknown"));
     }
 
     async function callGeminiWithRotation(prompt) {
@@ -295,7 +539,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function callGeminiSingle(apiKey, prompt) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -352,6 +596,21 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                     `).join('')}
                 </body></html>`;
+        } else if (format === 'md') {
+            filename += ".md";
+            content = `# Chat Log: ${currentTabTitle}\nURL: ${currentTabUrl}\nDate: ${new Date().toLocaleString()}\n\n---\n\n`;
+            chatHistory.forEach(msg => {
+                content += `### ${msg.role === 'user' ? 'YOU' : 'AI'}\n${msg.content}\n\n`;
+            });
+        } else if (format === 'json') {
+            mimeType = "application/json";
+            filename += ".json";
+            content = JSON.stringify({
+                title: currentTabTitle,
+                url: currentTabUrl,
+                date: new Date().toISOString(),
+                history: chatHistory
+            }, null, 2);
         }
 
         const blob = new Blob([content], { type: mimeType });
@@ -380,6 +639,113 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // --- FILE UPLOAD ---
+    async function handleFileUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'chat-message ai-message';
+        loadingDiv.innerHTML = `<div class="message-content">📂 Đang đọc file: ${file.name}...</div>`;
+        chatContainer.appendChild(loadingDiv);
+        
+        try {
+            let text = "";
+            if (file.type === "application/pdf") {
+                // PDF processing requires a library like pdf.js. 
+                // Since we cannot easily include external libs in this environment without complex setup,
+                // we will fallback to text/plain or ask user to copy paste for now, or assume text extraction.
+                // However, Chrome has a built-in PDF viewer but not an API to extract text directly from file object easily without libs.
+                // Alternative: Use Gemini 1.5 Flash native PDF support via API (Multimodal).
+                // Gemini API supports PDF upload via File API but requires uploading to Google File API first (File Manager).
+                // For direct "inline_data" (base64), only images are supported well. PDF support via base64 is limited/experimental in some endpoints.
+                // Let's try basic text reading for now or warn.
+                
+                // Real implementation would use pdf.js. 
+                // As a fallback/placeholder for this exercise:
+                loadingDiv.innerHTML = `<div class="message-content">⚠️ Hiện tại chưa hỗ trợ đọc trực tiếp file PDF trong tiện ích (cần thư viện ngoài). Vui lòng copy văn bản từ PDF và dán vào đây, hoặc dùng file .txt/.md.</div>`;
+                return;
+            } else {
+                // Text file
+                text = await file.text();
+            }
+            
+            loadingDiv.remove();
+            
+            // Add file content to chat context
+            addMessageToUI('user', `[Đã tải lên file: ${file.name}]`);
+            chatHistory.push({ role: 'user', content: `[User uploaded file: ${file.name}]\n\nContent:\n${text.substring(0, 30000)}` });
+            
+            // Ask AI to summarize the file
+            const prompt = `Tôi vừa tải lên file "${file.name}". Hãy tóm tắt nội dung chính của file này. Trả lời bằng ngôn ngữ: ${outputLanguage}. \n\nNội dung file:\n"""${text.substring(0, 30000)}"""`;
+            
+            const aiLoading = document.createElement('div');
+            aiLoading.className = 'chat-message ai-message';
+            aiLoading.innerHTML = '<div class="message-content">⏳ Đang phân tích file...</div>';
+            chatContainer.appendChild(aiLoading);
+            
+            const response = await callGeminiWithRotation(prompt);
+            aiLoading.remove();
+            addMessageToUI('ai', response);
+            chatHistory.push({ role: 'model', content: response });
+            saveHistory();
+            
+        } catch (error) {
+            loadingDiv.remove();
+            addSystemMessage(`❌ Lỗi đọc file: ${error.message}`);
+        } finally {
+            fileInput.value = ''; // Reset
+        }
+    }
+
+    // --- MINDMAP ---
+    async function generateMindmap() {
+        if (!pageContent) {
+            addSystemMessage("⚠️ Chưa có nội dung để tạo Mindmap.");
+            return;
+        }
+        
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'chat-message ai-message';
+        loadingDiv.innerHTML = '<div class="message-content">🧠 Đang tạo sơ đồ tư duy...</div>';
+        chatContainer.appendChild(loadingDiv);
+        
+        try {
+            let prompt = `Dựa vào nội dung trang web, hãy tạo sơ đồ tư duy (Mindmap) dưới dạng code Mermaid.js. 
+            Yêu cầu:
+            1. Sử dụng cú pháp 'graph TD' hoặc 'mindmap'.
+            2. Chỉ trả về khối code Mermaid, không kèm lời dẫn.
+            3. Nội dung ngắn gọn, súc tích.
+            4. Ngôn ngữ: ${outputLanguage}.
+            
+            Nội dung: """${pageContent.substring(0, 15000)}"""`;
+            
+            const response = await callGeminiWithRotation(prompt);
+            
+            loadingDiv.remove();
+            
+            // Extract Mermaid code
+            let mermaidCode = response;
+            const match = response.match(/```mermaid([\s\S]*?)```/);
+            if (match) mermaidCode = match[1].trim();
+            else {
+                // Try to cleanup if no code blocks
+                mermaidCode = response.replace(/```/g, '').trim();
+            }
+            
+            addMessageToUI('ai', `Đây là sơ đồ tư duy (bạn có thể copy vào [Mermaid Live Editor](https://mermaid.live/)):\n\n\`\`\`mermaid\n${mermaidCode}\n\`\`\``);
+            chatHistory.push({ role: 'model', content: `[Mermaid Code Generated]` });
+            saveHistory();
+            
+            // TODO: Auto render if we can inject mermaid library
+            // For now, we display code.
+            
+        } catch (error) {
+            loadingDiv.remove();
+            addMessageToUI('ai', `Lỗi tạo Mindmap: ${error.message}`);
+        }
+    }
+
     // --- HELPERS ---
     function escapeHtml(text) {
         if (!text) return '';
@@ -396,37 +762,47 @@ document.addEventListener('DOMContentLoaded', function () {
         return html;
     }
 
-    // --- TTS (Simplified) ---
+    // --- TTS (Enhanced) ---
     function toggleTTS(text) {
         if (ttsState.isPlaying) {
             stopTTS();
         } else {
-            // Start TTS
-            if (ttsEngineSelect.value === 'browser') {
-                ttsState.utterance = new SpeechSynthesisUtterance(text);
-                ttsState.utterance.lang = 'vi-VN';
-                ttsState.utterance.onend = () => { ttsState.isPlaying = false; };
-                window.speechSynthesis.speak(ttsState.utterance);
-                ttsState.isPlaying = true;
-            } else {
-                // Call Background/Popup for Google TTS?
-                // For simplicity in this refactor, sticking to Browser TTS or Basic Local.
-                // Google TTS requires API call logic similar to Popup.
-                alert("Hiện tại Chat chỉ hỗ trợ Browser TTS trong phiên bản này. Vui lòng sử dụng Popup cho Google TTS.");
-                startBrowserTTS(text);
-            }
+            startBrowserTTS(text);
         }
     }
     
     function startBrowserTTS(text) {
-        ttsState.utterance = new SpeechSynthesisUtterance(text);
-        ttsState.utterance.lang = 'vi-VN';
-        window.speechSynthesis.speak(ttsState.utterance);
+        if (!text) return;
+        stopTTS(); // Ensure previous is stopped
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Voice Selection
+        const selectedVoiceIndex = ttsVoiceSelect.value;
+        if (selectedVoiceIndex && availableVoices[selectedVoiceIndex]) {
+            utterance.voice = availableVoices[selectedVoiceIndex];
+        } else {
+            // Auto-select Vietnamese voice if available and output is Vietnamese
+            if (outputLanguage === 'Vietnamese') {
+                const viVoice = availableVoices.find(v => v.lang.includes('vi'));
+                if (viVoice) utterance.voice = viVoice;
+            }
+        }
+        
+        // Speed Control
+        utterance.rate = parseFloat(ttsSpeedInput.value) || 1.0;
+        
+        utterance.onend = () => { ttsState.isPlaying = false; };
+        utterance.onerror = (e) => { console.error("TTS Error:", e); ttsState.isPlaying = false; };
+        
+        window.speechSynthesis.speak(utterance);
         ttsState.isPlaying = true;
+        ttsState.utterance = utterance;
     }
 
     function stopTTS() {
         window.speechSynthesis.cancel();
         ttsState.isPlaying = false;
+        ttsState.utterance = null;
     }
 });
