@@ -174,6 +174,44 @@ document.addEventListener('DOMContentLoaded', function () {
     // Khởi tạo kết nối port khi trang được tải
     port = ensureConnected();
 
+    const CHAT_KEY = 'chatHistory_chat';
+    const CHAT_BACKUP_KEY = 'chatHistory_chat_backup';
+    const MAX_HISTORY_ITEMS = 200;
+
+    function normalizeAndCapHistory(list) {
+        if (!Array.isArray(list)) return [];
+        // Loại bỏ phần tử không hợp lệ và cap chiều dài
+        const normalized = list.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+        if (normalized.length > MAX_HISTORY_ITEMS) {
+            return normalized.slice(normalized.length - MAX_HISTORY_ITEMS);
+        }
+        return normalized;
+    }
+
+    function saveChatHistorySafe(source = 'auto') {
+        // Cắt bớt nếu quá dài
+        chatHistory = normalizeAndCapHistory(chatHistory);
+        return new Promise(resolve => {
+            chrome.storage.local.set({ [CHAT_KEY]: chatHistory, lastChatSaveSource: source }, function () {
+                if (chrome.runtime.lastError) {
+                    // Thử cắt bớt mạnh tay hơn và lưu lại
+                    chatHistory = chatHistory.slice(-Math.floor(MAX_HISTORY_ITEMS * 0.8));
+                    chrome.storage.local.set({ [CHAT_KEY]: chatHistory }, function () {
+                        // Lưu một bản backup phòng hờ
+                        chrome.storage.local.set({ [CHAT_BACKUP_KEY]: chatHistory }, function () {
+                            resolve(true);
+                        });
+                    });
+                } else {
+                    // Lưu một bản backup phòng hờ
+                    chrome.storage.local.set({ [CHAT_BACKUP_KEY]: chatHistory }, function () {
+                        resolve(true);
+                    });
+                }
+            });
+        });
+    }
+
     // Tải lựa chọn công cụ TTS và cài đặt web search đã lưu
     chrome.storage.sync.get(['ttsEngine', 'enableWebSearch', 'allowExternalKnowledge'], function (result) {
         if (result.ttsEngine) {
@@ -238,7 +276,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (message.success && message.summary) {
                 addChatMessage(message.summary, 'ai');
                 chatHistory.push({role: 'assistant', content: message.summary});
-                chrome.storage.local.set({chatHistory_chat: chatHistory});
+                saveChatHistorySafe('assistant_summary');
             } else if (!message.success && message.error) {
                 addChatMessage('Lỗi: ' + message.error, 'ai');
             }
@@ -247,11 +285,15 @@ document.addEventListener('DOMContentLoaded', function () {
         return true;
     });
     
-    // Khôi phục lịch sử chat theo phiên
-    chrome.storage.local.get(['chatHistory_chat'], function(res) {
-        if (Array.isArray(res.chatHistory_chat) && res.chatHistory_chat.length > 0) {
+    // Khôi phục lịch sử chat bền vững (có backup và cắt bớt)
+    chrome.storage.local.get([CHAT_KEY, CHAT_BACKUP_KEY], function(res) {
+        let loaded = Array.isArray(res[CHAT_KEY]) ? res[CHAT_KEY] : null;
+        if (!loaded || loaded.length === 0) {
+            loaded = Array.isArray(res[CHAT_BACKUP_KEY]) ? res[CHAT_BACKUP_KEY] : null;
+        }
+        if (loaded && loaded.length > 0) {
             hasHistory = true;
-            chatHistory = res.chatHistory_chat;
+            chatHistory = normalizeAndCapHistory(loaded);
             chatHistory.forEach(function(msg){ addChatMessage(msg.content, msg.role); });
         }
     });
@@ -1223,9 +1265,9 @@ document.addEventListener('DOMContentLoaded', function () {
         addChatMessage(userMessage, 'user');
         chatInput.value = '';
         
-        // Thêm vào lịch sử chat
+        // Thêm vào lịch sử chat và lưu an toàn
         chatHistory.push({role: 'user', content: userMessage});
-        chrome.storage.local.set({chatHistory_chat: chatHistory});
+        saveChatHistorySafe('user');
         
         // Lấy API key từ storage
         chrome.storage.sync.get(['geminiApiKey'], function(result) {
@@ -1254,7 +1296,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Hiển thị câu trả lời ban đầu
                     addChatMessage(response, 'ai');
                     chatHistory.push({role: 'assistant', content: response});
-                    chrome.storage.local.set({chatHistory_chat: chatHistory});
+                    saveChatHistorySafe('assistant');
                         
                         // Hiển thị thông báo đang tìm kiếm
                         const searchingMsgElement = addChatMessage("🔍 Đang tìm kiếm thông tin bổ sung...", 'ai');
@@ -1269,7 +1311,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             // Hiển thị câu trả lời được cải thiện
                             addChatMessage("📚 Thông tin bổ sung:\n\n" + enhancedResponse, 'ai');
                             chatHistory.push({role: 'assistant', content: enhancedResponse});
-                            chrome.storage.local.set({chatHistory_chat: chatHistory});
+                            saveChatHistorySafe('assistant_extra');
                         } catch (searchError) {
                             // Xóa thông báo đang tìm kiếm
                             searchingMsgElement.remove();
@@ -1280,7 +1322,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         // Hiển thị câu trả lời bình thường
                         addChatMessage(response, 'ai');
                         chatHistory.push({role: 'assistant', content: response});
-                        chrome.storage.local.set({chatHistory_chat: chatHistory});
+                        saveChatHistorySafe('assistant');
                     }
                 })
                 .catch(error => {
@@ -1385,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Hàm gọi Gemini API để tóm tắt
     async function callGeminiApi(apiKey, textToSummarize) {
         //const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
-        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         
         const prompt = `Với vai trò là một trợ lý AI chuyên nghiệp, hãy tóm tắt nội dung sau đây bằng tiếng Việt trong khoảng 3 đến 5 câu. Giữ lại những ý chính, quan trọng nhất và trình bày một cách cô đọng, mạch lạc:\n\n---\n\n${textToSummarize}`;
         
@@ -1419,7 +1461,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Hàm gọi Gemini API để chat với khả năng tự động tra cứu
     async function callGeminiChatApi(apiKey, userQuestion, contextText, chatHistory, isRetryWithSearch = false, allowExternalKnowledge = false) {
         //const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
-        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         
         let additionalInfo = "";
         
@@ -1637,6 +1679,10 @@ document.addEventListener('DOMContentLoaded', function () {
         
         return formatted;
     }
+    // Lưu lịch sử khi đóng cửa sổ/tab chat
+    window.addEventListener('beforeunload', function() {
+        try { saveChatHistorySafe('beforeunload'); } catch(e) {}
+    });
 });
     function startAreaSelection() {
         chrome.tabs.query({active: true, lastFocusedWindow: true}, function(tabs) {
@@ -1649,25 +1695,195 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (document.getElementById(overlayId)) return;
                     const overlay = document.createElement('div');
                     overlay.id = overlayId;
-                    overlay.style.position = 'fixed';
-                    overlay.style.top = '0';
-                    overlay.style.left = '0';
-                    overlay.style.width = '100%';
-                    overlay.style.height = '100%';
-                    overlay.style.zIndex = '2147483647';
-                    overlay.style.cursor = 'crosshair';
-                    overlay.style.background = 'rgba(0,0,0,0.05)';
+                    Object.assign(overlay.style, {
+                        position: 'fixed',
+                        inset: '0',
+                        zIndex: '2147483647',
+                        cursor: 'crosshair',
+                        background: 'rgba(0,0,0,0.08)'
+                    });
+
                     const rectEl = document.createElement('div');
-                    rectEl.style.position = 'fixed';
-                    rectEl.style.border = '2px solid #8e44ad';
-                    rectEl.style.background = 'rgba(142,68,173,0.15)';
-                    let startX = 0, startY = 0, dragging = false;
-                    overlay.addEventListener('mousedown', function(e){ dragging = true; startX = e.clientX; startY = e.clientY; rectEl.style.left = startX + 'px'; rectEl.style.top = startY + 'px'; rectEl.style.width = '0px'; rectEl.style.height = '0px'; if (!rectEl.parentNode) document.body.appendChild(rectEl); });
-                    overlay.addEventListener('mousemove', function(e){ if (!dragging) return; const x = Math.min(e.clientX, startX); const y = Math.min(e.clientY, startY); const w = Math.abs(e.clientX - startX); const h = Math.abs(e.clientY - startY); rectEl.style.left = x + 'px'; rectEl.style.top = y + 'px'; rectEl.style.width = w + 'px'; rectEl.style.height = h + 'px'; });
-                    function finish(e){ if (!dragging) return; dragging = false; const x = parseInt(rectEl.style.left); const y = parseInt(rectEl.style.top); const w = parseInt(rectEl.style.width); const h = parseInt(rectEl.style.height); if (overlay.parentNode) overlay.parentNode.removeChild(overlay); if (rectEl.parentNode) rectEl.parentNode.removeChild(rectEl); chrome.runtime.sendMessage({type:'AREA_SELECTED', rect:{x,y,width:w,height:h,dpr:window.devicePixelRatio}}); }
-                    overlay.addEventListener('mouseup', finish);
-                    overlay.addEventListener('mouseleave', function(e){ finish(e); });
+                    Object.assign(rectEl.style, {
+                        position: 'fixed',
+                        border: '2px solid #8e44ad',
+                        background: 'rgba(142,68,173,0.12)',
+                        boxShadow: '0 0 0 100vmax rgba(0,0,0,0.15)',
+                        pointerEvents: 'none'
+                    });
+
+                    const toolbar = document.createElement('div');
+                    Object.assign(toolbar.style, {
+                        position: 'fixed',
+                        padding: '6px 8px',
+                        background: '#ffffff',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '6px',
+                        boxShadow: '0 4px 14px rgba(0,0,0,0.1)',
+                        fontFamily: 'sans-serif',
+                        fontSize: '12px',
+                        color: '#111827',
+                        display: 'none',
+                        zIndex: '2147483647'
+                    });
+                    const sizeLabel = document.createElement('span');
+                    sizeLabel.textContent = '';
+                    sizeLabel.style.marginRight = '8px';
+                    const okBtn = document.createElement('button');
+                    okBtn.textContent = 'Chụp';
+                    Object.assign(okBtn.style, { marginRight: '6px', cursor: 'pointer' });
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.textContent = 'Hủy';
+                    Object.assign(cancelBtn.style, { cursor: 'pointer' });
+                    toolbar.appendChild(sizeLabel);
+                    toolbar.appendChild(okBtn);
+                    toolbar.appendChild(cancelBtn);
+
+                    const handles = [];
+                    const handlePositions = ['nw','n','ne','e','se','s','sw','w'];
+                    handlePositions.forEach(pos => {
+                        const h = document.createElement('div');
+                        Object.assign(h.style, {
+                            position: 'fixed',
+                            width: '10px',
+                            height: '10px',
+                            background: '#8e44ad',
+                            borderRadius: '50%',
+                            margin: '-5px 0 0 -5px',
+                            display: 'none',
+                            cursor: (pos === 'n' || pos === 's') ? 'ns-resize'
+                                    : (pos === 'e' || pos === 'w') ? 'ew-resize'
+                                    : (pos === 'ne' || pos === 'sw') ? 'nesw-resize'
+                                    : 'nwse-resize',
+                            zIndex: '2147483647'
+                        });
+                        h.dataset.pos = pos;
+                        handles.push(h);
+                    });
+
+                    let startX = 0, startY = 0;
+                    let x = 0, y = 0, w = 0, h = 0;
+                    let dragging = false;
+                    let resizing = false;
+                    let activeHandle = null;
+
+                    function placeUI() {
+                        rectEl.style.left = x + 'px';
+                        rectEl.style.top = y + 'px';
+                        rectEl.style.width = w + 'px';
+                        rectEl.style.height = h + 'px';
+
+                        // Vị trí toolbar
+                        toolbar.style.left = (x + 8) + 'px';
+                        toolbar.style.top = Math.max(8, y - 42) + 'px';
+                        sizeLabel.textContent = Math.max(0, Math.round(w)) + '×' + Math.max(0, Math.round(h)) + ' px';
+
+                        // Vị trí handles
+                        const cx = x + w / 2;
+                        const cy = y + h / 2;
+                        const points = {
+                            nw: [x, y],
+                            n: [cx, y],
+                            ne: [x + w, y],
+                            e: [x + w, cy],
+                            se: [x + w, y + h],
+                            s: [cx, y + h],
+                            sw: [x, y + h],
+                            w: [x, cy]
+                        };
+                        handles.forEach(hd => {
+                            const p = points[hd.dataset.pos];
+                            hd.style.left = p[0] + 'px';
+                            hd.style.top = p[1] + 'px';
+                        });
+                    }
+
+                    function clampRect() {
+                        const maxW = window.innerWidth;
+                        const maxH = window.innerHeight;
+                        x = Math.min(Math.max(0, x), maxW);
+                        y = Math.min(Math.max(0, y), maxH);
+                        w = Math.min(Math.max(0, w), maxW - x);
+                        h = Math.min(Math.max(0, h), maxH - y);
+                    }
+
+                    overlay.addEventListener('mousedown', function(e){
+                        if (e.target !== overlay) return;
+                        dragging = true;
+                        startX = e.clientX; startY = e.clientY;
+                        x = startX; y = startY; w = 0; h = 0;
+                        if (!rectEl.parentNode) document.body.appendChild(rectEl);
+                        toolbar.style.display = 'none';
+                        handles.forEach(hd => hd.style.display = 'none');
+                    });
+
+                    window.addEventListener('mousemove', function(e){
+                        if (dragging) {
+                            x = Math.min(e.clientX, startX);
+                            y = Math.min(e.clientY, startY);
+                            w = Math.abs(e.clientX - startX);
+                            h = Math.abs(e.clientY - startY);
+                            placeUI();
+                        } else if (resizing && activeHandle) {
+                            const dx = e.clientX, dy = e.clientY;
+                            if (activeHandle === 'n') { h = (y + h) - dy; y = dy; }
+                            if (activeHandle === 's') { h = dy - y; }
+                            if (activeHandle === 'w') { w = (x + w) - dx; x = dx; }
+                            if (activeHandle === 'e') { w = dx - x; }
+                            if (activeHandle === 'nw') { w = (x + w) - dx; h = (y + h) - dy; x = dx; y = dy; }
+                            if (activeHandle === 'ne') { w = dx - x; h = (y + h) - dy; y = dy; }
+                            if (activeHandle === 'sw') { w = (x + w) - dx; h = dy - y; x = dx; }
+                            if (activeHandle === 'se') { w = dx - x; h = dy - y; }
+                            clampRect();
+                            placeUI();
+                        }
+                    });
+
+                    window.addEventListener('mouseup', function(){
+                        if (dragging) {
+                            dragging = false;
+                            // Hiện toolbar và handles khi đã chọn
+                            toolbar.style.display = 'block';
+                            handles.forEach(hd => hd.style.display = 'block');
+                            placeUI();
+                        }
+                        if (resizing) {
+                            resizing = false;
+                            activeHandle = null;
+                        }
+                    });
+
+                    handles.forEach(hd => {
+                        hd.addEventListener('mousedown', (e) => {
+                            e.stopPropagation();
+                            resizing = true;
+                            activeHandle = hd.dataset.pos;
+                        });
+                    });
+
+                    function cleanup() {
+                        [overlay, rectEl, toolbar, ...handles].forEach(el => { if (el && el.parentNode) el.parentNode.removeChild(el); });
+                        window.removeEventListener('mousemove', null);
+                        window.removeEventListener('mouseup', null);
+                    }
+
+                    okBtn.addEventListener('click', function(){
+                        const out = { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h), dpr: window.devicePixelRatio };
+                        cleanup();
+                        chrome.runtime.sendMessage({type:'AREA_SELECTED', rect: out});
+                    });
+                    cancelBtn.addEventListener('click', cleanup);
+                    window.addEventListener('keydown', function(e){
+                        if (e.key === 'Escape') { cleanup(); }
+                        if (e.key === 'Enter' && w > 0 && h > 0) {
+                            okBtn.click();
+                        }
+                    });
+
                     document.body.appendChild(overlay);
+                    document.body.appendChild(rectEl);
+                    document.body.appendChild(toolbar);
+                    handles.forEach(hd => document.body.appendChild(hd));
                 }
             });
         });

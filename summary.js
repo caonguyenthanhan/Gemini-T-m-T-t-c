@@ -621,7 +621,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Hàm gọi Gemini API để chat
     async function callGeminiChatApi(apiKey, userQuestion, contextText, summaryText, allowExternalKnowledge = false, chatHistory = []) {
         // const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
-        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         
         // Tạo prompt với context và câu hỏi
         const prompt = `Bạn là trợ lý AI giúp người dùng hiểu sâu hơn về nội dung họ đang đọc. 

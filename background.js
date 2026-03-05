@@ -36,6 +36,7 @@ function bytesToBase64(bytes) {
       contexts: ["page"]
     });
 
+
     // Menu gửi văn bản + ảnh đến Gemini (tự động dùng thứ có sẵn)
     chrome.contextMenus.create({
       id: "summarizeMixed",
@@ -229,7 +230,7 @@ function bytesToBase64(bytes) {
   // --- HÀM GỌI API GEMINI ---
   // Cập nhật hàm callGeminiApi để xử lý nội dung từ YouTube và Google Doc
   async function callGeminiApi(apiKey, textToSummarize, fromContextMenu = false, port = null) {
-      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
       
       // Tối ưu hóa độ dài văn bản để tránh timeout
       const MAX_CONTENT_LENGTH = 8000; // Giới hạn 8000 ký tự
@@ -354,7 +355,7 @@ function bytesToBase64(bytes) {
   }
 
   async function callGeminiVisionApi(apiKey, imageInlineData, port = null, additionalText = '', fromContextMenu = false) {
-      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
       const prompt = 'Hãy tóm tắt nội dung chính của ảnh bằng tiếng Việt, súc tích và dễ hiểu.';
 
       try {

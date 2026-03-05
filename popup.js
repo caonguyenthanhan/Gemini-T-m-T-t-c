@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const apiKeyInput = document.getElementById('apiKey');
     const saveKeyBtn = document.getElementById('saveKeyBtn');
     const getKeyBtn = document.getElementById('getKeyBtn');
+    const clearKeysBtn = document.getElementById('clearKeysBtn');
 
     // Google TTS
     const googleTtsApiKeyInput = document.getElementById('googleTtsApiKey');
@@ -60,6 +61,29 @@ document.addEventListener('DOMContentLoaded', function () {
     getKeyBtn.addEventListener('click', function() {
         chrome.tabs.create({ url: 'https://aistudio.google.com/apikey' });
     });
+
+    if (clearKeysBtn) {
+        clearKeysBtn.addEventListener('click', function() {
+            const ok = window.confirm('Xóa API Key và dữ liệu liên quan?');
+            if (!ok) return;
+            try {
+                chrome.storage.sync.remove(['geminiApiKey','googleTtsConfig'], function(){
+                    chrome.storage.local.get(null, function(all){
+                        const keys = Object.keys(all||{}).filter(function(k){ return k && (k.indexOf('chatHistory_summary')===0); });
+                        const removeKeys = keys.concat(['capturedScreenshot','capturedRect','visionSummarySessions','contextMenuSummary','selectedText','originalContent','fullPageContent']);
+                        chrome.storage.local.remove(removeKeys, function(){
+                            apiKeyInput.value = '';
+                            googleTtsApiKeyInput.value = '';
+                            resultBox.textContent = 'Đã xóa API Key và dữ liệu liên quan.';
+                            setTimeout(function(){ resultBox.textContent = 'Trạng thái: Sẵn sàng.'; }, 2000);
+                        });
+                    });
+                });
+            } catch(e) {
+                resultBox.textContent = 'Lỗi khi xóa: ' + (e && e.message ? e.message : 'Không xác định');
+            }
+        });
+    }
     
     // Lưu Google TTS config
     saveGoogleTtsBtn.addEventListener('click', function() {
@@ -297,16 +321,120 @@ document.addEventListener('DOMContentLoaded', function () {
                 fullPageContent: fullPageContent,
                 chatMode: 'fullPage'
             }, function() {
-                // Mở trang chat.html trong cửa sổ mới
-                chrome.windows.create({
-                    url: chrome.runtime.getURL('chat.html'),
-                    type: 'popup',
-                    width: 800,
-                    height: 600
-                });
+                // Ưu tiên mở trong Side Panel nếu API khả dụng
+                if (chrome.sidePanel && chrome.sidePanel.setOptions && chrome.sidePanel.open) {
+                    try {
+                        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+                            if (!tabs || !tabs[0]) return;
+                            const tabId = tabs[0].id;
+                            chrome.sidePanel.setOptions({ tabId, path: 'chat.html', enabled: true }, function() {
+                                chrome.sidePanel.open({ tabId });
+                            });
+                        });
+                    } catch (e) {
+                        // Fallback sang sidebar in-page nếu Side Panel lỗi
+                        openInPageSidebar();
+                    }
+                } else {
+                    // Fallback: chèn sidebar trong trang hiện tại
+                    openInPageSidebar();
+                }
             });
         });
     });
+
+    function openInPageSidebar() {
+        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+            if (!tabs || !tabs[0]) return;
+            const tabId = tabs[0].id;
+            chrome.scripting.executeScript({
+                target: { tabId },
+                func: function (chatUrl) {
+                    const SIDEBAR_ID = 'gemini-chat-sidebar';
+                    const EXISTING = document.getElementById(SIDEBAR_ID);
+                    if (EXISTING) {
+                        EXISTING.style.display = 'block';
+                        return;
+                    }
+                    const container = document.createElement('div');
+                    container.id = SIDEBAR_ID;
+                    container.style.position = 'fixed';
+                    container.style.top = '0';
+                    container.style.right = '0';
+                    container.style.height = '100vh';
+                    container.style.width = '38vw';
+                    container.style.minWidth = '360px';
+                    container.style.maxWidth = '90vw';
+                    container.style.boxShadow = '0 0 12px rgba(0,0,0,0.2)';
+                    container.style.background = '#fff';
+                    container.style.zIndex = '2147483646';
+                    container.style.borderLeft = '1px solid #e5e7eb';
+                    container.style.display = 'flex';
+                    container.style.flexDirection = 'column';
+                    container.style.transition = 'width 0.15s ease';
+
+                    const header = document.createElement('div');
+                    header.style.flex = '0 0 auto';
+                    header.style.height = '40px';
+                    header.style.display = 'flex';
+                    header.style.alignItems = 'center';
+                    header.style.justifyContent = 'space-between';
+                    header.style.padding = '0 8px';
+                    header.style.background = '#f9fafb';
+                    header.style.borderBottom = '1px solid #e5e7eb';
+                    header.style.userSelect = 'none';
+                    header.innerHTML = '<strong>Gemini Chat</strong>';
+
+                    const controls = document.createElement('div');
+                    const closeBtn = document.createElement('button');
+                    closeBtn.textContent = '✕';
+                    closeBtn.style.border = 'none';
+                    closeBtn.style.background = 'transparent';
+                    closeBtn.style.cursor = 'pointer';
+                    closeBtn.style.fontSize = '16px';
+                    closeBtn.title = 'Đóng';
+                    closeBtn.onclick = () => container.remove();
+
+                    controls.appendChild(closeBtn);
+                    header.appendChild(controls);
+
+                    const resizer = document.createElement('div');
+                    resizer.style.position = 'absolute';
+                    resizer.style.left = '-6px';
+                    resizer.style.top = '0';
+                    resizer.style.width = '12px';
+                    resizer.style.height = '100%';
+                    resizer.style.cursor = 'col-resize';
+                    resizer.style.zIndex = '2147483647';
+
+                    let isResizing = false;
+                    resizer.addEventListener('mousedown', (e) => {
+                        isResizing = true;
+                        e.preventDefault();
+                    });
+                    window.addEventListener('mousemove', (e) => {
+                        if (!isResizing) return;
+                        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 360), window.innerWidth * 0.9);
+                        container.style.width = newWidth + 'px';
+                    });
+                    window.addEventListener('mouseup', () => { isResizing = false; });
+
+                    const iframe = document.createElement('iframe');
+                    iframe.src = chatUrl;
+                    iframe.style.border = 'none';
+                    iframe.style.flex = '1 1 auto';
+                    iframe.style.width = '100%';
+                    iframe.style.height = 'calc(100vh - 40px)';
+
+                    container.appendChild(header);
+                    container.appendChild(iframe);
+                    container.appendChild(resizer);
+                    document.documentElement.appendChild(container);
+                },
+                args: [chrome.runtime.getURL('chat.html')]
+            });
+        });
+    }
 
     // Sự kiện nhấn nút Đọc/Tạm dừng
     playPauseBtn.addEventListener('click', function() {
