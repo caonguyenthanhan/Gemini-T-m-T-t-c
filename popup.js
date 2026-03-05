@@ -1,351 +1,324 @@
 document.addEventListener('DOMContentLoaded', function () {
-    // Khai báo các đối tượng giao diện
+    // --- UI ELEMENTS ---
+    const tabs = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
     const summarizeBtn = document.getElementById('summarizeBtn');
     const chatBtn = document.getElementById('chatBtn');
+    const captureBtn = document.getElementById('captureBtn');
+    
     const playPauseBtn = document.getElementById('playPauseBtn');
     const stopBtn = document.getElementById('stopBtn');
     const resultBox = document.getElementById('result-box');
-    const imageUpload = document.getElementById('imageUpload');
-    const imageContextText = document.getElementById('imageContextText');
-    const summarizeImageBtn = document.getElementById('summarizeImageBtn');
     
-    // Gemini
-    const apiKeyInput = document.getElementById('apiKey');
-    const saveKeyBtn = document.getElementById('saveKeyBtn');
-    const getKeyBtn = document.getElementById('getKeyBtn');
-    const clearKeysBtn = document.getElementById('clearKeysBtn');
-
-    // Google TTS
+    // Settings
+    const keysContainer = document.getElementById('keysContainer');
+    const addKeyBtn = document.getElementById('addKeyBtn');
+    const saveKeysBtn = document.getElementById('saveKeysBtn');
+    const userPersonaInput = document.getElementById('userPersona');
+    const systemPromptInput = document.getElementById('systemPrompt');
+    const savePersonaBtn = document.getElementById('savePersonaBtn');
+    const enableWebSearchCheckbox = document.getElementById('enableWebSearch');
+    const clearDataBtn = document.getElementById('clearDataBtn');
+    
+    // TTS
+    const ttsEngineSelect = document.getElementById('ttsEngine');
     const googleTtsApiKeyInput = document.getElementById('googleTtsApiKey');
     const saveGoogleTtsBtn = document.getElementById('saveGoogleTtsBtn');
-    const ttsEngineSelect = document.getElementById('ttsEngine');
-    
+    const googleTtsSection = document.getElementById('googleTtsSection');
 
-
+    // State
     let fullPageContent = '';
-    let utterance = null;
-    let audioContext = null;
-    let audioSource = null;
     let port = null;
-    let isPlaying = false;
 
-    // --- CÁC HÀM TẢI VÀ LƯU KEY ---
+    // --- INITIALIZATION ---
+    initTabs();
+    loadSettings();
+    injectContentScript();
+    ensureConnected();
 
-    // Tải các key đã lưu khi mở popup
-    chrome.storage.sync.get(['geminiApiKey', 'googleTtsConfig', 'ttsEngine'], function (result) {
-        if (result.geminiApiKey) {
-            apiKeyInput.value = result.geminiApiKey;
-        }
-        if (result.googleTtsConfig) {
-            googleTtsApiKeyInput.value = result.googleTtsConfig.apiKey || '';
-        }
-        if (result.ttsEngine) {
-            ttsEngineSelect.value = result.ttsEngine;
-        }
-        // Hiển thị/ẩn phần cài đặt Google TTS dựa trên giá trị đã lưu
-        toggleGoogleTtsSection();
-    });
-
-    // Lưu Gemini API key
-    saveKeyBtn.addEventListener('click', function () {
-        const apiKey = apiKeyInput.value.trim();
-        if (apiKey) {
-            chrome.storage.sync.set({ geminiApiKey: apiKey }, function () {
-                resultBox.textContent = 'Đã lưu Gemini API Key!';
-                setTimeout(() => { resultBox.textContent = 'Trạng thái: Sẵn sàng.'; }, 2000);
+    // --- TAB LOGIC ---
+    function initTabs() {
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active class
+                tabs.forEach(t => t.classList.remove('active'));
+                tabContents.forEach(c => c.classList.remove('active'));
+                
+                // Add active class
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab).classList.add('active');
             });
-        }
-    });
-    
-    // Mở trang lấy Gemini API key
-    getKeyBtn.addEventListener('click', function() {
-        chrome.tabs.create({ url: 'https://aistudio.google.com/apikey' });
-    });
-
-    if (clearKeysBtn) {
-        clearKeysBtn.addEventListener('click', function() {
-            const ok = window.confirm('Xóa API Key và dữ liệu liên quan?');
-            if (!ok) return;
-            try {
-                chrome.storage.sync.remove(['geminiApiKey','googleTtsConfig'], function(){
-                    chrome.storage.local.get(null, function(all){
-                        const keys = Object.keys(all||{}).filter(function(k){ return k && (k.indexOf('chatHistory_summary')===0); });
-                        const removeKeys = keys.concat(['capturedScreenshot','capturedRect','visionSummarySessions','contextMenuSummary','selectedText','originalContent','fullPageContent']);
-                        chrome.storage.local.remove(removeKeys, function(){
-                            apiKeyInput.value = '';
-                            googleTtsApiKeyInput.value = '';
-                            resultBox.textContent = 'Đã xóa API Key và dữ liệu liên quan.';
-                            setTimeout(function(){ resultBox.textContent = 'Trạng thái: Sẵn sàng.'; }, 2000);
-                        });
-                    });
-                });
-            } catch(e) {
-                resultBox.textContent = 'Lỗi khi xóa: ' + (e && e.message ? e.message : 'Không xác định');
-            }
         });
     }
-    
-    // Lưu Google TTS config
-    saveGoogleTtsBtn.addEventListener('click', function() {
-        const config = {
-            apiKey: googleTtsApiKeyInput.value.trim()
-        };
-        if (config.apiKey) {
-            chrome.storage.sync.set({ googleTtsConfig: config }, function() {
-                resultBox.textContent = 'Đã lưu Google TTS Key thành công!';
-                setTimeout(() => { resultBox.textContent = 'Trạng thái: Sẵn sàng.'; }, 2000);
-            });
+
+    // --- SETTINGS LOGIC ---
+    function loadSettings() {
+        chrome.storage.sync.get([
+            'geminiApiKey', 'geminiApiKeys', 
+            'userPersona', 'systemPrompt', 
+            'enableWebSearch', 'ttsEngine', 'googleTtsConfig'
+        ], function (res) {
+            // 1. API Keys (Migration & Display)
+            let keys = res.geminiApiKeys || [];
+            if (keys.length === 0 && res.geminiApiKey) {
+                keys = [res.geminiApiKey]; // Migrate legacy key
+                chrome.storage.sync.set({ geminiApiKeys: keys });
+            }
+            if (keys.length === 0) keys = ['']; // Empty slot
+            renderKeyInputs(keys);
+
+            // 2. Persona & Prompt
+            if (res.userPersona) userPersonaInput.value = res.userPersona;
+            if (res.systemPrompt) systemPromptInput.value = res.systemPrompt;
+
+            // 3. Web Search
+            enableWebSearchCheckbox.checked = res.enableWebSearch !== false;
+
+            // 4. TTS
+            if (res.ttsEngine) ttsEngineSelect.value = res.ttsEngine;
+            toggleGoogleTtsSection();
+            if (res.googleTtsConfig) googleTtsApiKeyInput.value = res.googleTtsConfig.apiKey || '';
+        });
+    }
+
+    function renderKeyInputs(keys) {
+        keysContainer.innerHTML = '';
+        keys.forEach((key, index) => {
+            addKeyInput(key, index === 0); // First one cannot be removed if it's the only one? No, allow flexible.
+        });
+    }
+
+    function addKeyInput(value = '', isFirst = false) {
+        const div = document.createElement('div');
+        div.className = 'key-item';
+        
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.placeholder = isFirst ? 'Nhập Gemini API Key chính...' : 'Nhập Key dự phòng...';
+        input.value = value;
+        input.className = 'api-key-input';
+        
+        const btn = document.createElement('button');
+        btn.className = 'key-remove';
+        btn.innerHTML = '×';
+        btn.title = 'Xóa key này';
+        btn.onclick = () => div.remove();
+        
+        div.appendChild(input);
+        div.appendChild(btn);
+        keysContainer.appendChild(div);
+    }
+
+    addKeyBtn.addEventListener('click', () => {
+        const currentInputs = document.querySelectorAll('.api-key-input');
+        if (currentInputs.length >= 10) {
+            alert('Tối đa 10 API Key.');
+            return;
         }
+        addKeyInput();
     });
-    
-    // Lưu lựa chọn công cụ TTS và hiển thị/ẩn phần cài đặt Google TTS
+
+    saveKeysBtn.addEventListener('click', () => {
+        const inputs = document.querySelectorAll('.api-key-input');
+        const keys = [];
+        const seen = new Set();
+        
+        inputs.forEach(input => {
+            const val = input.value.trim();
+            if (val && !seen.has(val)) {
+                keys.push(val);
+                seen.add(val);
+            }
+        });
+
+        if (keys.length === 0) {
+            alert('Vui lòng nhập ít nhất 1 API Key.');
+            return;
+        }
+
+        chrome.storage.sync.set({ geminiApiKeys: keys, geminiApiKey: keys[0] }, () => { // Sync legacy key for compatibility
+            showStatus('Đã lưu danh sách API Key!', 'success');
+        });
+    });
+
+    savePersonaBtn.addEventListener('click', () => {
+        chrome.storage.sync.set({
+            userPersona: userPersonaInput.value.trim(),
+            systemPrompt: systemPromptInput.value.trim()
+        }, () => {
+            showStatus('Đã lưu thông tin cá nhân hóa!', 'success');
+        });
+    });
+
+    enableWebSearchCheckbox.addEventListener('change', function() {
+        chrome.storage.sync.set({ enableWebSearch: this.checked });
+    });
+
+    // TTS Settings
     ttsEngineSelect.addEventListener('change', function() {
         chrome.storage.sync.set({ ttsEngine: this.value });
         toggleGoogleTtsSection();
     });
-    
 
-    
-    // Hàm hiển thị/ẩn phần cài đặt Google TTS
+    saveGoogleTtsBtn.addEventListener('click', function() {
+        const config = { apiKey: googleTtsApiKeyInput.value.trim() };
+        chrome.storage.sync.set({ googleTtsConfig: config }, () => {
+            showStatus('Đã lưu Google TTS Key!', 'success');
+        });
+    });
+
     function toggleGoogleTtsSection() {
-        const googleTtsSection = document.getElementById('googleTtsSection');
-        if (ttsEngineSelect.value === 'google') {
-            googleTtsSection.style.display = 'block';
-        } else {
-            googleTtsSection.style.display = 'none';
-        }
+        googleTtsSection.style.display = ttsEngineSelect.value === 'google' ? 'block' : 'none';
     }
 
+    clearDataBtn.addEventListener('click', () => {
+        if (confirm('Bạn chắc chắn muốn xóa toàn bộ dữ liệu và cài đặt?')) {
+            chrome.storage.sync.clear();
+            chrome.storage.local.clear();
+            location.reload();
+        }
+    });
 
-    // --- XỬ LÝ TIN NHẮN TỪ BACKGROUND/CONTENT SCRIPT ---
+    // --- MAIN FEATURES ---
+
+    function showStatus(msg, type = 'info') {
+        resultBox.textContent = msg;
+        if (type === 'error') resultBox.style.color = 'red';
+        else if (type === 'success') resultBox.style.color = 'green';
+        else resultBox.style.color = '#333';
+    }
+
+    function injectContentScript() {
+        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+            if (tabs[0] && tabs[0].id) {
+                chrome.scripting.executeScript({
+                    target: { tabId: tabs[0].id },
+                    files: ['Readability.js', 'content.js']
+                }).catch(err => console.log("Inject error:", err));
+            }
+        });
+    }
+
+    // Message Listener
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.type === "CONTENT_RESULT") {
             fullPageContent = request.content;
-            resultBox.textContent = "Đã lấy nội dung. Sẵn sàng để tóm tắt.";
+            showStatus("Đã lấy nội dung. Sẵn sàng!");
             summarizeBtn.disabled = false;
         } else if (request.type === "SUMMARY_RESULT") {
-            // Clear timeout warning nếu có
-            if (summarizeBtn.warningTimeout) {
-                clearTimeout(summarizeBtn.warningTimeout);
-                summarizeBtn.warningTimeout = null;
-            }
-            
+            summarizeBtn.disabled = false;
+            summarizeBtn.textContent = '📝 Tóm tắt trang này';
             if (request.success) {
+                resultBox.style.color = '#333';
                 resultBox.textContent = request.summary;
             } else {
-                resultBox.textContent = `Lỗi tóm tắt: ${request.error}`;
-            }
-            summarizeBtn.textContent = 'Tóm tắt trang này';
-            summarizeBtn.disabled = false;
-            if (summarizeImageBtn) {
-                summarizeImageBtn.textContent = 'Tóm tắt ảnh';
-                summarizeImageBtn.disabled = false;
+                showStatus(`Lỗi: ${request.error}`, 'error');
             }
         } else if (request.type === "TTS_RESULT") {
             if (request.success) {
                 playAudioFromBase64(request.audioData);
             } else {
-                resultBox.textContent = `Lỗi đọc: ${request.error}`;
+                showStatus(`Lỗi đọc: ${request.error}`, 'error');
                 resetPlayButton();
             }
         }
     });
-    
 
-    // --- SỰ KIỆN NHẤN NÚT ---
-
-    // Hàm để đảm bảo port kết nối luôn hoạt động
-    function ensureConnected() {
-        if (!port || port.error) {
-            try {
-                port = chrome.runtime.connect({name: "popup"});
-                
-                // Lắng nghe tin nhắn từ background script
-                port.onMessage.addListener((message) => {
-                    if (message.type === "SUMMARY_RESULT") {
-                        // Clear timeout warning nếu có
-                        if (summarizeBtn.warningTimeout) {
-                            clearTimeout(summarizeBtn.warningTimeout);
-                            summarizeBtn.warningTimeout = null;
-                        }
-                        
-                        if (message.success) {
-                            resultBox.textContent = message.summary;
-                        } else {
-                            resultBox.textContent = `Lỗi tóm tắt: ${message.error}`;
-                        }
-                        summarizeBtn.textContent = 'Tóm tắt trang này';
-                        summarizeBtn.disabled = false;
-                    } else if (message.type === "TTS_RESULT") {
-                        if (message.success) {
-                            playAudioFromBase64(message.audioData);
-                        } else {
-                            resultBox.textContent = `Lỗi đọc: ${message.error}`;
-                            resetPlayButton();
-                        }
-                    }
-                });
-                
-                // Xử lý khi kết nối bị đóng
-                port.onDisconnect.addListener(() => {
-                    console.log("Port bị ngắt kết nối");
-                    port = null;
-                });
-            } catch (error) {
-                console.error("Lỗi khi kết nối port:", error);
-                port = null;
-            }
-        }
-        return port;
-    }
-    
-    // Tạo kết nối với background script khi popup mở
-    // Thay thế đoạn code này:
-    // port = chrome.runtime.connect({name: "popup"});
-    // Bằng:
-    ensureConnected();
-    
-    // Sự kiện nhấn nút Tóm tắt
-    summarizeBtn.addEventListener('click', function () {
-        stopReading(); // Dừng đọc nếu đang đọc
-        chrome.storage.sync.get(['geminiApiKey'], function (result) {
-            if (!result.geminiApiKey) {
-                resultBox.textContent = 'Vui lòng nhập và lưu Gemini API Key.';
+    // Summarize Button
+    summarizeBtn.addEventListener('click', () => {
+        stopReading();
+        
+        chrome.storage.sync.get(['geminiApiKeys', 'geminiApiKey', 'userPersona', 'systemPrompt'], function (result) {
+            const keys = result.geminiApiKeys || (result.geminiApiKey ? [result.geminiApiKey] : []);
+            
+            if (keys.length === 0) {
+                showStatus('Vui lòng nhập API Key trong phần Cài đặt.', 'error');
+                document.querySelector('[data-tab="settings"]').click();
                 return;
             }
+
             if (!fullPageContent) {
-                resultBox.textContent = "Chưa lấy được nội dung trang. Vui lòng thử lại.";
+                showStatus("Chưa lấy được nội dung trang. Vui lòng thử lại hoặc reload trang.", 'error');
                 return;
             }
-            // Hiển thị loading với progress
-            summarizeBtn.textContent = 'Đang xử lý...';
+
             summarizeBtn.disabled = true;
-            resultBox.textContent = '🔄 Đang gửi yêu cầu tóm tắt đến Gemini AI...\n⏱️ Thời gian dự kiến: 10-30 giây';
-            
-            // Thêm timeout warning sau 15 giây
-            const warningTimeout = setTimeout(() => {
-                if (summarizeBtn.disabled) {
-                    resultBox.textContent += '\n⚠️ Đang mất nhiều thời gian hơn dự kiến. Vui lòng đợi thêm...';
-                }
-            }, 15000);
-            
-            // Lưu timeout để có thể clear sau này
-            summarizeBtn.warningTimeout = warningTimeout;
-            
-            // Gửi tin nhắn qua kết nối
-            port.postMessage({
+            summarizeBtn.textContent = '⏳ Đang xử lý...';
+            showStatus('🔄 Đang gửi yêu cầu đến Gemini AI...\n(Sẽ tự động thử các key khác nếu lỗi)', 'info');
+
+            // Send request with all info
+            const port = ensureConnected();
+            const msg = {
                 type: "SUMMARIZE_REQUEST",
-                apiKey: result.geminiApiKey,
-                content: fullPageContent
-            });
+                apiKeys: keys, // Send array
+                content: fullPageContent,
+                persona: result.userPersona,
+                systemPrompt: result.systemPrompt
+            };
+            
+            if (port) port.postMessage(msg);
+            else chrome.runtime.sendMessage(msg);
         });
     });
 
-    function readFileAsBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const base64 = reader.result.split(',')[1];
-                resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    }
-
-    if (summarizeImageBtn) {
-        summarizeImageBtn.addEventListener('click', async function () {
-            if (!imageUpload || !imageUpload.files || imageUpload.files.length === 0) {
-                resultBox.textContent = 'Vui lòng chọn một ảnh.';
-                return;
-            }
-
-            const file = imageUpload.files[0];
-            const mime = file.type || 'image/png';
-
-            summarizeImageBtn.disabled = true;
-            summarizeImageBtn.textContent = 'Đang xử lý ảnh...';
-            resultBox.textContent = 'Đang gửi ảnh đến Gemini, vui lòng chờ...';
-
-            chrome.storage.sync.get(['geminiApiKey'], async function (result) {
-                const apiKey = result.geminiApiKey;
-                if (!apiKey) {
-                    resultBox.textContent = 'Vui lòng nhập và lưu Gemini API Key.';
-                    summarizeImageBtn.disabled = false;
-                    summarizeImageBtn.textContent = 'Tóm tắt ảnh';
-                    return;
-                }
-
-                try {
-                    const base64 = await readFileAsBase64(file);
-                    const activePort = ensureConnected();
-                    const additionalText = (imageContextText && imageContextText.value ? imageContextText.value.trim() : '');
-                    if (activePort) {
-                        activePort.postMessage({
-                            type: 'SUMMARIZE_IMAGE_REQUEST',
-                            apiKey: apiKey,
-                            image: { mime_type: mime, data: base64 },
-                            additionalText: additionalText
-                        });
-                    } else {
-                        chrome.runtime.sendMessage({
-                            type: 'SUMMARIZE_IMAGE_REQUEST',
-                            apiKey: apiKey,
-                            image: { mime_type: mime, data: base64 },
-                            additionalText: additionalText
-                        });
-                    }
-                } catch (e) {
-                    resultBox.textContent = 'Lỗi khi đọc ảnh: ' + e.message;
-                    summarizeImageBtn.disabled = false;
-                    summarizeImageBtn.textContent = 'Tóm tắt ảnh';
-                }
-            });
-        });
-    }
-    
-    // Sự kiện nhấn nút Chat
-    chatBtn.addEventListener('click', function () {
-        chrome.storage.sync.get(['geminiApiKey'], function (result) {
-            if (!result.geminiApiKey) {
-                resultBox.textContent = 'Vui lòng nhập và lưu Gemini API Key.';
+    // Chat Button
+    chatBtn.addEventListener('click', () => {
+        chrome.storage.sync.get(['geminiApiKeys', 'geminiApiKey'], function (result) {
+            const keys = result.geminiApiKeys || (result.geminiApiKey ? [result.geminiApiKey] : []);
+            
+            if (keys.length === 0) {
+                showStatus('Vui lòng nhập API Key trong phần Cài đặt.', 'error');
+                document.querySelector('[data-tab="settings"]').click();
                 return;
             }
             if (!fullPageContent) {
-                resultBox.textContent = "Chưa lấy được nội dung trang. Vui lòng thử lại.";
+                showStatus("Chưa lấy được nội dung trang.", 'error');
                 return;
             }
-            
-            // Lưu nội dung trang vào storage để chat.html có thể truy cập
-            chrome.storage.local.set({ 
-                fullPageContent: fullPageContent,
-                chatMode: 'fullPage'
-            }, function() {
-                // Ưu tiên mở trong Side Panel nếu API khả dụng
-                if (chrome.sidePanel && chrome.sidePanel.setOptions && chrome.sidePanel.open) {
-                    try {
-                        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-                            if (!tabs || !tabs[0]) return;
-                            const tabId = tabs[0].id;
-                            chrome.sidePanel.setOptions({ tabId, path: 'chat.html', enabled: true }, function() {
-                                chrome.sidePanel.open({ tabId });
-                            });
-                        });
-                    } catch (e) {
-                        // Fallback sang sidebar in-page nếu Side Panel lỗi
-                        openInPageSidebar();
-                    }
-                } else {
-                    // Fallback: chèn sidebar trong trang hiện tại
-                    openInPageSidebar();
-                }
+
+            // Save content for chat
+            chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+                const currentTabUrl = tabs[0] ? tabs[0].url : '';
+                const currentTabTitle = tabs[0] ? tabs[0].title : '';
+                
+                chrome.storage.local.set({ 
+                    fullPageContent: fullPageContent,
+                    currentTabUrl: currentTabUrl,
+                    currentTabTitle: currentTabTitle,
+                    chatMode: 'fullPage'
+                }, function() {
+                    openSidebarOrPopup();
+                });
             });
         });
     });
+
+    // Capture Button
+    captureBtn.addEventListener('click', () => {
+        // Close popup and open chat with capture mode
+        chrome.storage.local.set({ chatMode: 'capture_init' }, function() {
+             openSidebarOrPopup();
+             window.close(); // Close popup to allow selection
+        });
+    });
+
+    function openSidebarOrPopup() {
+        if (chrome.sidePanel && chrome.sidePanel.open) {
+            chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+                if (!tabs[0]) return;
+                const tabId = tabs[0].id;
+                // Side Panel API
+                chrome.sidePanel.open({ tabId }).catch(() => openInPageSidebar());
+            });
+        } else {
+            openInPageSidebar();
+        }
+    }
 
     function openInPageSidebar() {
         chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-            if (!tabs || !tabs[0]) return;
+            if (!tabs[0]) return;
             const tabId = tabs[0].id;
             chrome.scripting.executeScript({
                 target: { tabId },
@@ -356,79 +329,44 @@ document.addEventListener('DOMContentLoaded', function () {
                         EXISTING.style.display = 'block';
                         return;
                     }
+                    
+                    // 1. Resize Body to make space
+                    const sidebarWidth = 400; // px
+                    document.body.style.transition = 'margin-right 0.3s ease';
+                    document.body.style.marginRight = sidebarWidth + 'px';
+                    
+                    // 2. Create Sidebar
                     const container = document.createElement('div');
                     container.id = SIDEBAR_ID;
-                    container.style.position = 'fixed';
-                    container.style.top = '0';
-                    container.style.right = '0';
-                    container.style.height = '100vh';
-                    container.style.width = '38vw';
-                    container.style.minWidth = '360px';
-                    container.style.maxWidth = '90vw';
-                    container.style.boxShadow = '0 0 12px rgba(0,0,0,0.2)';
-                    container.style.background = '#fff';
-                    container.style.zIndex = '2147483646';
-                    container.style.borderLeft = '1px solid #e5e7eb';
-                    container.style.display = 'flex';
-                    container.style.flexDirection = 'column';
-                    container.style.transition = 'width 0.15s ease';
+                    Object.assign(container.style, {
+                        position: 'fixed', top: '0', right: '0', height: '100vh',
+                        width: sidebarWidth + 'px', background: '#fff', zIndex: '2147483647',
+                        boxShadow: '-2px 0 5px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column'
+                    });
 
+                    // Header
                     const header = document.createElement('div');
-                    header.style.flex = '0 0 auto';
-                    header.style.height = '40px';
-                    header.style.display = 'flex';
-                    header.style.alignItems = 'center';
-                    header.style.justifyContent = 'space-between';
-                    header.style.padding = '0 8px';
-                    header.style.background = '#f9fafb';
-                    header.style.borderBottom = '1px solid #e5e7eb';
-                    header.style.userSelect = 'none';
+                    Object.assign(header.style, {
+                        padding: '10px', background: '#f5f5f5', borderBottom: '1px solid #ddd',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                    });
                     header.innerHTML = '<strong>Gemini Chat</strong>';
-
-                    const controls = document.createElement('div');
+                    
                     const closeBtn = document.createElement('button');
                     closeBtn.textContent = '✕';
-                    closeBtn.style.border = 'none';
-                    closeBtn.style.background = 'transparent';
-                    closeBtn.style.cursor = 'pointer';
-                    closeBtn.style.fontSize = '16px';
-                    closeBtn.title = 'Đóng';
-                    closeBtn.onclick = () => container.remove();
-
-                    controls.appendChild(closeBtn);
-                    header.appendChild(controls);
-
-                    const resizer = document.createElement('div');
-                    resizer.style.position = 'absolute';
-                    resizer.style.left = '-6px';
-                    resizer.style.top = '0';
-                    resizer.style.width = '12px';
-                    resizer.style.height = '100%';
-                    resizer.style.cursor = 'col-resize';
-                    resizer.style.zIndex = '2147483647';
-
-                    let isResizing = false;
-                    resizer.addEventListener('mousedown', (e) => {
-                        isResizing = true;
-                        e.preventDefault();
-                    });
-                    window.addEventListener('mousemove', (e) => {
-                        if (!isResizing) return;
-                        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 360), window.innerWidth * 0.9);
-                        container.style.width = newWidth + 'px';
-                    });
-                    window.addEventListener('mouseup', () => { isResizing = false; });
-
+                    closeBtn.style.border = 'none'; closeBtn.style.background = 'none'; closeBtn.style.cursor = 'pointer'; closeBtn.style.fontSize = '16px';
+                    closeBtn.onclick = () => {
+                        container.style.display = 'none';
+                        document.body.style.marginRight = '0px'; // Restore
+                    };
+                    header.appendChild(closeBtn);
+                    
                     const iframe = document.createElement('iframe');
                     iframe.src = chatUrl;
-                    iframe.style.border = 'none';
-                    iframe.style.flex = '1 1 auto';
-                    iframe.style.width = '100%';
-                    iframe.style.height = 'calc(100vh - 40px)';
+                    iframe.style.flex = '1'; iframe.style.border = 'none'; width: '100%';
 
                     container.appendChild(header);
                     container.appendChild(iframe);
-                    container.appendChild(resizer);
                     document.documentElement.appendChild(container);
                 },
                 args: [chrome.runtime.getURL('chat.html')]
@@ -436,171 +374,88 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Sự kiện nhấn nút Đọc/Tạm dừng
+    // --- TTS & PORT LOGIC (Keep existing mostly) ---
+    function ensureConnected() {
+        if (!port || port.error) {
+            try {
+                port = chrome.runtime.connect({name: "popup"});
+                port.onMessage.addListener((message) => {
+                    if (message.type === "SUMMARY_RESULT") {
+                        summarizeBtn.disabled = false;
+                        summarizeBtn.textContent = '📝 Tóm tắt trang này';
+                        if (message.success) resultBox.textContent = message.summary;
+                        else showStatus(`Lỗi: ${message.error}`, 'error');
+                    } else if (message.type === "TTS_RESULT") {
+                        if (message.success) playAudioFromBase64(message.audioData);
+                        else { showStatus(`Lỗi đọc: ${message.error}`, 'error'); resetPlayButton(); }
+                    }
+                });
+                port.onDisconnect.addListener(() => { port = null; });
+            } catch (e) { port = null; }
+        }
+        return port;
+    }
+
+    // TTS Control Listeners (Same as before)
     playPauseBtn.addEventListener('click', function() {
         const textToRead = resultBox.textContent;
-        if (!textToRead || textToRead.startsWith("Trạng thái:") || textToRead.startsWith("Lỗi")) {
-            return;
-        }
+        if (!textToRead || textToRead.startsWith("👋")) return;
         stopReading();
+        
         if (ttsEngineSelect.value === 'browser') {
-            if (speechSynthesis.paused) {
-                speechSynthesis.resume();
-                playPauseBtn.textContent = '⏸️ Tạm dừng';
-            } else if (speechSynthesis.speaking) {
-                speechSynthesis.pause();
-                playPauseBtn.textContent = '▶️ Tiếp tục';
-            } else {
-                startBrowserReading(textToRead);
-            }
-        } else if (ttsEngineSelect.value === 'google') {
+            if (window.speechSynthesis.paused) { window.speechSynthesis.resume(); playPauseBtn.textContent = '⏸️ Tạm dừng'; }
+            else if (window.speechSynthesis.speaking) { window.speechSynthesis.pause(); playPauseBtn.textContent = '▶️ Tiếp tục'; }
+            else startBrowserReading(textToRead);
+        } else {
+            // Google/Local TTS
             chrome.storage.sync.get('googleTtsConfig', function(result) {
-                if (!result.googleTtsConfig || !result.googleTtsConfig.apiKey) {
-                    resultBox.textContent = "Vui lòng nhập và lưu Google Cloud API Key.";
-                    return;
+                const config = (ttsEngineSelect.value === 'google') ? result.googleTtsConfig : { engine: 'local', languageCode: 'vi-VN' };
+                if (ttsEngineSelect.value === 'google' && (!config || !config.apiKey)) {
+                    showStatus("Vui lòng nhập Google TTS API Key.", 'error'); return;
                 }
-                playPauseBtn.disabled = true;
-                playPauseBtn.textContent = 'Đang tải...';
-                const activePort = ensureConnected();
-                const config = Object.assign({}, result.googleTtsConfig, { engine: 'google' });
-                if (activePort) {
-                    activePort.postMessage({ type: "TTS_REQUEST", config: config, text: textToRead });
-                } else {
-                    chrome.runtime.sendMessage({ type: "TTS_REQUEST", config: config, text: textToRead });
-                }
+                
+                playPauseBtn.disabled = true; playPauseBtn.textContent = '⏳...';
+                const p = ensureConnected();
+                const req = { type: "TTS_REQUEST", config: Object.assign({}, config, { engine: ttsEngineSelect.value }), text: textToRead };
+                if (p) p.postMessage(req); else chrome.runtime.sendMessage(req);
             });
-        } else if (ttsEngineSelect.value === 'local') {
-            playPauseBtn.disabled = true;
-            playPauseBtn.textContent = 'Đang tải...';
-            const activePort = ensureConnected();
-            const config = { engine: 'local', languageCode: 'vi-VN' };
-            if (activePort) {
-                activePort.postMessage({ type: "TTS_REQUEST", config: config, text: textToRead });
-            } else {
-                chrome.runtime.sendMessage({ type: "TTS_REQUEST", config: config, text: textToRead });
-            }
         }
     });
 
-    // Sự kiện nhấn nút Dừng
-    stopBtn.addEventListener('click', function() {
-        stopReading();
-    });
+    stopBtn.addEventListener('click', stopReading);
 
-    // --- CÁC HÀM ĐIỀU KHIỂN ĐỌC ---
-
+    // Browser TTS Helpers
+    let utterance = null;
     function startBrowserReading(text) {
         utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'vi-VN';
-        utterance.onend = function() {
-            resetPlayButton();
-        };
-        utterance.onerror = function(event) {
-            resultBox.textContent = "Lỗi giọng đọc trình duyệt: " + event.error;
-            resetPlayButton();
-        }
-        speechSynthesis.speak(utterance);
+        utterance.onend = resetPlayButton;
+        utterance.onerror = (e) => { showStatus("Lỗi browser TTS: " + e.error, 'error'); resetPlayButton(); };
+        window.speechSynthesis.speak(utterance);
         playPauseBtn.textContent = '⏸️ Tạm dừng';
     }
-
-    function stopBrowserReading() {
-        if (speechSynthesis.speaking || speechSynthesis.paused) {
-            speechSynthesis.cancel();
-        }
-    }
+    function stopBrowserReading() { if (window.speechSynthesis.speaking || window.speechSynthesis.paused) window.speechSynthesis.cancel(); }
     
-    function playAudioFromBase64(base64String) {
+    // Audio Context Helpers (Same as before)
+    let audioContext = null; let audioSource = null;
+    function playAudioFromBase64(base64) {
         try {
-            if (audioSource) {
-                audioSource.stop();
-            }
-            if (audioContext) {
-                audioContext.close();
-            }
-            
-            // Tạo AudioContext mới chỉ khi cần thiết
+            if (audioSource) audioSource.stop();
+            if (audioContext) audioContext.close();
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Sử dụng Uint8Array trực tiếp từ base64
-            const binaryString = atob(base64String);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            
-            // Tối ưu vòng lặp
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            
-            // Sử dụng Promise để xử lý decodeAudioData
-            audioContext.decodeAudioData(bytes.buffer)
-                .then(buffer => {
-                    audioSource = audioContext.createBufferSource();
-                    audioSource.buffer = buffer;
-                    audioSource.connect(audioContext.destination);
-                    audioSource.start(0);
-                    playPauseBtn.textContent = '⏹️ Dừng';
-                    playPauseBtn.disabled = false;
-                    audioSource.onended = resetPlayButton;
-                })
-                .catch(err => {
-                    console.error('Lỗi giải mã audio:', err);
-                    resultBox.textContent = 'Lỗi giải mã audio.';
-                    resetPlayButton();
-                });
-        } catch (error) {
-            console.error('Lỗi khi phát audio:', error);
-            resultBox.textContent = 'Lỗi phát audio.';
-            resetPlayButton();
-        }
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            audioContext.decodeAudioData(bytes.buffer).then(buffer => {
+                audioSource = audioContext.createBufferSource();
+                audioSource.buffer = buffer;
+                audioSource.connect(audioContext.destination);
+                audioSource.start(0);
+                playPauseBtn.textContent = '⏹️ Dừng'; playPauseBtn.disabled = false;
+                audioSource.onended = resetPlayButton;
+            });
+        } catch (e) { showStatus("Lỗi phát audio.", 'error'); resetPlayButton(); }
     }
-
-    function stopAudioPlayback() {
-        if (audioSource) {
-            audioSource.stop();
-            audioSource = null;
-        }
-        if (audioContext) {
-            audioContext.close();
-            audioContext = null;
-        }
-    }
-
-    function stopReading() {
-        stopBrowserReading();
-        stopAudioPlayback();
-        resetPlayButton();
-    }
-    
-    function resetPlayButton() {
-        playPauseBtn.textContent = '▶️ Đọc';
-        playPauseBtn.disabled = false;
-    }
-
-    // --- HÀM KHỞI ĐỘNG ---
-    function init() {
-        summarizeBtn.disabled = true;
-        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-            if (tabs[0] && tabs[0].id) {
-                chrome.scripting.executeScript({
-                    target: { tabId: tabs[0].id },
-                    files: ['Readability.js', 'content.js']
-                }).catch(err => console.log("Lỗi inject script:", err));
-            }
-        });
-    }
-
-    // Kiểm tra xem có kết quả tóm tắt từ context menu không
-    chrome.storage.sync.get(['contextMenuSummary'], function(result) {
-        if (result.contextMenuSummary) {
-            // Hiển thị kết quả tóm tắt
-            resultBox.textContent = result.contextMenuSummary;
-            // Xóa kết quả từ storage
-            chrome.storage.sync.remove(['contextMenuSummary']);
-        } else {
-            // Tiếp tục khởi tạo bình thường
-            init();
-        }
-    });
-    
-    init();
+    function stopReading() { stopBrowserReading(); if (audioSource) { audioSource.stop(); audioSource = null; } resetPlayButton(); }
+    function resetPlayButton() { playPauseBtn.textContent = '▶️ Đọc'; playPauseBtn.disabled = false; }
 });

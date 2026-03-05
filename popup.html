@@ -4,74 +4,126 @@
   <title>Gemini Tóm Tắt & Đọc</title>
   <meta charset="UTF-8">
   <style>
-    body { width: 380px; font-family: Arial, sans-serif; padding: 10px; font-size: 14px; }
-    h1 { font-size: 16px; text-align: center; margin-top: 0; }
-    input[type="password"], input[type="text"] { width: 75%; padding: 8px; margin-bottom: 5px; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 10px; margin-top: 5px; cursor: pointer; border: none; border-radius: 4px; color: white; font-weight: bold; }
-    button:hover { opacity: 0.9; }
-    button:disabled { background-color: #ccc; cursor: not-allowed; }
-    select { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
-    #summarizeBtn { background-color: #4285F4; width: 100%; }
-    #controls button { width: 49%; display: inline-block; }
-    #playPauseBtn { background-color: #34A853; }
-    #stopBtn { background-color: #EA4335; }
-    .api-section { border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
-    .api-section label { display: block; margin-bottom: 3px; font-weight: bold; }
-    #result-box { margin-top: 10px; padding: 10px; white-space: pre-wrap; word-wrap: break-word; max-height: 200px; overflow-y: auto; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 4px; font-size: 13px; line-height: 1.5; }
-    .api-input-container { display: flex; align-items: center; }
-    .api-input-container input { margin-right: 5px; }
-    .get-key-btn { background-color: #0F9D58; padding: 8px; font-size: 12px; }
+    :root {
+      --primary-color: #4285F4;
+      --success-color: #34A853;
+      --warning-color: #FBBC05;
+      --danger-color: #EA4335;
+      --text-color: #333;
+      --bg-color: #f9f9f9;
+      --border-color: #ddd;
+    }
+    body { width: 400px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; margin: 0; font-size: 14px; color: var(--text-color); }
+    
+    /* Tabs */
+    .tabs { display: flex; background: #fff; border-bottom: 1px solid var(--border-color); }
+    .tab-btn { flex: 1; padding: 12px; border: none; background: none; cursor: pointer; font-weight: 600; color: #666; border-bottom: 3px solid transparent; transition: all 0.2s; }
+    .tab-btn:hover { background-color: #f5f5f5; }
+    .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+    
+    /* Content */
+    .tab-content { display: none; padding: 15px; }
+    .tab-content.active { display: block; }
+    
+    /* Components */
+    h2 { font-size: 14px; margin: 0 0 10px 0; color: #555; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+    
+    .btn { width: 100%; padding: 10px; margin-bottom: 8px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; color: white; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .btn:hover { opacity: 0.9; }
+    .btn-primary { background-color: var(--primary-color); }
+    .btn-success { background-color: var(--success-color); }
+    .btn-danger { background-color: var(--danger-color); }
+    .btn-warning { background-color: var(--warning-color); color: #333; }
+    .btn-outline { background-color: transparent; border: 1px solid var(--border-color); color: #666; }
+    .btn-outline:hover { background-color: #f0f0f0; }
+    
+    input[type="text"], input[type="password"], textarea, select { width: 100%; padding: 8px 10px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; font-family: inherit; }
+    textarea { resize: vertical; min-height: 60px; }
+    
+    .key-item { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; }
+    .key-item input { margin-bottom: 0; flex: 1; }
+    .key-remove { background: none; border: none; color: #999; cursor: pointer; padding: 5px; font-size: 16px; }
+    .key-remove:hover { color: var(--danger-color); }
+    
+    #result-box { margin-top: 15px; padding: 12px; background: #fff; border: 1px solid var(--border-color); border-radius: 6px; min-height: 100px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+    
+    .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    
+    .footer { text-align: center; padding: 10px; font-size: 11px; color: #999; border-top: 1px solid #eee; margin-top: 10px; }
+    
+    /* Toggle Switch */
+    .switch-group { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .switch-label { font-size: 13px; color: #444; }
   </style>
 </head>
 <body>
-  <!-- Thêm thông tin về hỗ trợ mới vào phần tiêu đề -->
-  <h1>Gemini Tóm Tắt & Đọc</h1>
-  <p style="text-align: center; margin-top: -5px; font-size: 12px; color: #4285F4;">Hỗ trợ trang web, YouTube và Google Doc</p>
-  
-  <!-- Phần còn lại giữ nguyên -->
-  <div class="api-section">
-    <label for="apiKey">Gemini API Key:</label>
-    <div class="api-input-container">
-      <input type="password" id="apiKey" placeholder="Dán Gemini API Key của bạn vào đây">
-      <button id="getKeyBtn" class="get-key-btn" title="Lấy Gemini API Key">🔑 Lấy Key</button>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="home">🏠 Trang chủ</button>
+    <button class="tab-btn" data-tab="settings">⚙️ Cài đặt</button>
+  </div>
+
+  <!-- HOME TAB -->
+  <div id="home" class="tab-content active">
+    <div class="feature-grid">
+      <button id="summarizeBtn" class="btn btn-primary">📝 Tóm tắt trang này</button>
+      <button id="chatBtn" class="btn btn-success">💬 Chat với AI</button>
     </div>
-    <button id="saveKeyBtn" style="background-color: #fbbc05; width: 100%;">Lưu Key</button>
-    <button id="clearKeysBtn" style="background-color: #EA4335; width: 100%; margin-top:6px;">Xóa Key và dữ liệu</button>
+    
+    <button id="captureBtn" class="btn btn-outline">📸 Chụp & Hỏi (Area)</button>
+
+    <h2>Đọc Văn Bản (TTS)</h2>
+    <select id="ttsEngine">
+      <option value="browser">Giọng đọc trình duyệt (Mặc định)</option>
+      <option value="google">Google Cloud TTS (Cao cấp)</option>
+      <option value="local">Local TTS Server</option>
+    </select>
+    
+    <div class="feature-grid">
+      <button id="playPauseBtn" class="btn btn-primary">▶️ Đọc / Dừng</button>
+      <button id="stopBtn" class="btn btn-danger">⏹️ Hủy</button>
+    </div>
+
+    <div id="result-box">👋 Xin chào! Hãy chọn một tính năng để bắt đầu.</div>
   </div>
 
-  <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-    <button id="summarizeBtn" style="flex: 3;">Tóm tắt trang này</button>
-    <button id="chatBtn" style="flex: 1; background-color: #0F9D58;">Chat</button>
-  </div>
-  
-  <label for="ttsEngine">Chọn giọng đọc:</label>
-  <select id="ttsEngine">
-      <option value="browser">Giọng đọc của trình duyệt</option>
-      <option value="google">Giọng đọc Google Cloud</option>
-      <option value="local">Giọng đọc cục bộ (Local)</option>
-  </select>
-  
+  <!-- SETTINGS TAB -->
+  <div id="settings" class="tab-content">
+    <h2>Quản lý API Key</h2>
+    <div style="margin-bottom: 5px; font-size: 12px; color: #666;">
+      Nhập nhiều key để tự động đổi khi một key bị lỗi (Quota/Rate limit).
+    </div>
+    <div id="keysContainer">
+      <!-- Keys will be injected here -->
+    </div>
+    <button id="addKeyBtn" class="btn btn-outline" style="padding: 5px 10px; font-size: 12px;">+ Thêm Key khác</button>
+    <button id="saveKeysBtn" class="btn btn-warning">💾 Lưu Danh Sách Key</button>
+    
+    <h2>Cá nhân hóa (Persona)</h2>
+    <div style="margin-bottom: 5px; font-size: 12px; color: #666;">
+      Bạn là ai? (Ví dụ: "Học sinh cấp 3", "Chuyên gia lập trình", "Bà nội trợ"). AI sẽ tóm tắt phù hợp với bạn.
+    </div>
+    <input type="text" id="userPersona" placeholder="Nhập vai trò của bạn (VD: Sinh viên IT)...">
+    <textarea id="systemPrompt" placeholder="Prompt hệ thống tùy chỉnh (nếu cần)..."></textarea>
+    <button id="savePersonaBtn" class="btn btn-primary">Lưu Cá Nhân Hóa</button>
 
-  
-  <div id="googleTtsSection" class="api-section" style="display: none;">
-      <label>Cài đặt Google Cloud TTS:</label>
+    <h2>Cấu hình khác</h2>
+    <div class="switch-group">
+      <span class="switch-label">Tự động tra cứu web (Web Search)</span>
+      <input type="checkbox" id="enableWebSearch" checked>
+    </div>
+    
+    <div id="googleTtsSection" style="display: none; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px;">
+      <label style="display:block; margin-bottom:5px;">Google TTS API Key:</label>
       <input type="password" id="googleTtsApiKey" placeholder="Google Cloud API Key">
-      <button id="saveGoogleTtsBtn" style="background-color: #fbbc05; width: 100%;">Lưu Google TTS Key</button>
-  </div>
-  
-  <div id="controls">
-      <button id="playPauseBtn">▶️ Đọc</button>
-      <button id="stopBtn">⏹️ Dừng</button>
+      <button id="saveGoogleTtsBtn" class="btn btn-warning">Lưu Google TTS Key</button>
+    </div>
+    
+    <button id="clearDataBtn" class="btn btn-danger" style="margin-top: 20px;">🗑️ Xóa toàn bộ dữ liệu & Reset</button>
   </div>
 
-  <div id="image-section" style="margin-top: 10px;">
-    <label for="imageUpload">Chọn ảnh để tóm tắt:</label>
-    <input id="imageUpload" type="file" accept="image/*">
-    <textarea id="imageContextText" placeholder="Nhập văn bản kèm ảnh (tuỳ chọn)" style="width: 100%; height: 60px; margin-top: 6px; border: 1px solid #ccc; border-radius: 4px; padding: 6px;"></textarea>
-    <button id="summarizeImageBtn" style="background-color: #4285F4; width: 100%; margin-top: 6px;">Tóm tắt ảnh</button>
+  <div class="footer">
+    Gemini Tóm Tắt & Đọc v3.1 | Design for Quick Web AI
   </div>
-
-  <div id="result-box">Trạng thái: Sẵn sàng.</div>
 
   <script src="popup.js"></script>
 </body>
